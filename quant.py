@@ -9,6 +9,7 @@ import json
 import matplotlib.pyplot as plt
 from arch import arch_model
 from scipy import stats
+from scipy.signal import argrelextrema
 import os
 from dotenv import load_dotenv
 from urllib.parse import quote
