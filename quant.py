@@ -441,7 +441,7 @@ if scelta_modulo == "🧪 TradingView Pro ":
     # 1. BARRA SUPERIORE PULITA (SOLO TICKER, TIMEFRAME E STORICO)
     tv_c1, tv_c2, tv_c3 = st.columns(3)
     with tv_c1:
-        tv_ticker = st.text_input("Simbolo / Ticker:", value="Inserisci il ticker", key="tv_test_tk").strip().upper()
+        tv_ticker = st.text_input("Simbolo / Ticker:", value="AAPL", key="tv_test_tk").strip().upper()
     with tv_c2:
         tv_tf_map = {
             "15 Minuti (15m)": "15m",
