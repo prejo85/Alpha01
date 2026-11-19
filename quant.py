@@ -9,7 +9,6 @@ import json
 import matplotlib.pyplot as plt
 from arch import arch_model
 from scipy import stats
-from scipy.signal import argrelextrema
 import os
 from dotenv import load_dotenv
 from urllib.parse import quote
@@ -250,12 +249,10 @@ st.title("📐 Dashboard Quantanalisys")
 
 if "asset_type_index" not in st.session_state:
     st.session_state.asset_type_index = 0
-    
 # PROTEZIONE: Recupero sicuro dei dati sensibili dall'ambiente
 T_ID = os.getenv("TELEGRAM_CHAT_ID", "2072895073")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
-
 # ==============================================================================
 # DATABASE INTERNO DEI PANIERI AZIONARI AGGIORNATO E AMPLIATO
 # ==============================================================================
@@ -334,7 +331,7 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "US Mid-Caps": return MIDCAP_US
     elif nome_paniere == "Crypto & AI Stocks": return CRYPTO_STOCKS
     elif nome_paniere == "Euro Stoxx 50": return EUROSTOXX_FULL
-    return "Inserisci ticker"
+    return "AAPL,MSFT"
 
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     if not BOT_TOKEN:
@@ -347,7 +344,32 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
         return res.status_code == 200
     except Exception:
         return False
-        
+
+def calc_vp(df, div=200):
+    if df.empty: return None, None, None, [], []
+    p_min, p_max = float(df['Low'].min()), float(df['High'].max())
+    if p_max - p_min <= 0: return p_min, p_min, p_min, [], []
+    bins = np.linspace(p_min, p_max, div + 1)
+    vols = np.zeros(div)
+    highs, lows, volumes = df['High'].values, df['Low'].values, df['Volume'].values
+    for h, l, v in zip(highs, lows, volumes):
+        if v <= 0 or h == l: continue
+        mask = (bins[1:] >= l) & (bins[:-1] <= h)
+        vols[mask] += v / max(1, np.sum(mask))
+    prices = [float((bins[i] + bins[i+1]) / 2) for i in range(div)]
+    vols_list = vols.tolist()
+    poc_idx = vols_list.index(max(vols_list))
+    poc = prices[poc_idx]
+    v_total, v_target = sum(vols_list), sum(vols_list) * 0.70
+    v_current, idx_b, idx_a = vols_list[poc_idx], poc_idx, poc_idx
+    while v_current < v_target:
+        v_s = vols_list[idx_b - 1] if idx_b > 0 else 0
+        v_p = vols_list[idx_a + 1] if idx_a < div - 1 else 0
+        if v_s == 0 and v_p == 0: break
+        if v_s >= v_p: idx_b -= 1; v_current += v_s
+        else: idx_a += 1; v_current += v_p
+    return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
+
 # ==============================================================================
 # STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
 # ==============================================================================
@@ -391,7 +413,7 @@ st.title(f"{scelta_modulo}")
 # ==============================================================================
 descrizioni_moduli = {
 
-        "🧪 TradingView Pro": (
+        "🧪 TradingView Pro ": (
         "**Scopo Operativo & Architettura:** Workstation grafica interattiva multi-timeframe (15m–1M) "
         "dotata di indicatori tecnici sovrapponibili (EMA 20/50/100/200, Bande di Bollinger, VWAP), "
         "oscillatori sincronizzati (RSI, MACD), Triple Volume Profile e strumenti di disegno "
