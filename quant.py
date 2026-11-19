@@ -249,10 +249,12 @@ st.title("📐 Dashboard Quantanalisys")
 
 if "asset_type_index" not in st.session_state:
     st.session_state.asset_type_index = 0
+    
 # PROTEZIONE: Recupero sicuro dei dati sensibili dall'ambiente
 T_ID = os.getenv("TELEGRAM_CHAT_ID", "2072895073")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
+
 # ==============================================================================
 # DATABASE INTERNO DEI PANIERI AZIONARI AGGIORNATO E AMPLIATO
 # ==============================================================================
@@ -331,7 +333,7 @@ def ottieni_paniere(nome_paniere):
     elif nome_paniere == "US Mid-Caps": return MIDCAP_US
     elif nome_paniere == "Crypto & AI Stocks": return CRYPTO_STOCKS
     elif nome_paniere == "Euro Stoxx 50": return EUROSTOXX_FULL
-    return "AAPL,MSFT"
+    return "Inserisci ticker"
 
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     if not BOT_TOKEN:
@@ -388,7 +390,7 @@ st.title(f"{scelta_modulo}")
 # ==============================================================================
 descrizioni_moduli = {
 
-        "🧪 TradingView Pro ": (
+        "🧪 TradingView Pro": (
         "**Scopo Operativo & Architettura:** Workstation grafica interattiva multi-timeframe (15m–1M) "
         "dotata di indicatori tecnici sovrapponibili (EMA 20/50/100/200, Bande di Bollinger, VWAP), "
         "oscillatori sincronizzati (RSI, MACD), Triple Volume Profile e strumenti di disegno "
