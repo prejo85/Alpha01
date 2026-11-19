@@ -344,3 +344,63 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
         return res.status_code == 200
     except Exception:
         return False
+        
+# ==============================================================================
+# STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
+# ==============================================================================
+with st.sidebar:
+    st.image("logo_fmjp.png", use_container_width=True)
+    st.markdown("## 📺 Seleziona l'analisi che vuoi approfondire:")
+    st.markdown("🤖 **Menu Navigazione Moduli**")
+
+    opzioni_menu = [
+        "📡 Sala dei Segnali (CSV)",
+        "📁 Analisi Triple-POC",
+        "📐 Analisi Geometrica POC",
+        "🚀 Breakout Trend-Following",
+        "📉 Backtest Z-Score",
+        "📊 Ottimizzatore & Correlazione",
+        "🔔 Alert Telegram Classic",
+        "🔔 Alert Telegram Z-Score",
+        "📈 Analisi GARCH Volatilità",
+        "🌊 Studio Divergenze Volatilità",
+        "🐂🐻 Cicli Bull & Bear Market",
+        "📊 Recovery Storico Drawdown",
+        "🥣 Scanner Rounding Bottom",
+        "📺 TradingView Interactive Canvas",
+        "🧪 TradingView Pro Lab (Test)",
+        "🛡️ Screener Indici & VIX",
+        "📉 Drop Giornaliero Cumulato",
+        "🏛️ Simulatore Obbligazioni & BTP",
+        "📈 Frontiera Efficiente Markowitz",
+        "📅 Scanner Stagionalità & T-Test",
+        "🧭 Regime Hurst & Test ADF",
+        "🎲 Monte Carlo & Value at Risk",
+        "💎 Edge Statistico Buyback",
+    ]
+
+    if "jump_to_modulo" in st.session_state and st.session_state["jump_to_modulo"]:
+        st.session_state["menu_navigazione_moduli"] = st.session_state.pop("jump_to_modulo")
+
+    modulo_corrente = st.session_state.get("menu_navigazione_moduli", opzioni_menu[0])
+    idx_default = opzioni_menu.index(modulo_corrente) if modulo_corrente in opzioni_menu else 0
+
+    scelta_modulo = st.radio(
+        label="Seleziona Modulo Operativo:",
+        options=opzioni_menu,
+        index=idx_default,
+        label_visibility="collapsed",
+        key="menu_navigazione_moduli",
+    )
+    
+    st.markdown("---")
+    if st.button("🔒 Disconnetti (Logout)", use_container_width=True):
+        st.session_state["autenticato"] = False
+        st.rerun()
+
+
+    st.markdown("---")
+    st.caption("Quant Framework Dashboard Pro v3.0 📐")
+
+# Configurazione del Titolo dinamico della pagina principale
+st.title(f"{scelta_modulo}")
