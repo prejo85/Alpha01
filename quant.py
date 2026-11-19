@@ -254,7 +254,6 @@ if "asset_type_index" not in st.session_state:
 T_ID = os.getenv("TELEGRAM_CHAT_ID", "2072895073")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
-
 # ==============================================================================
 # DATABASE INTERNO DEI PANIERI AZIONARI AGGIORNATO E AMPLIATO
 # ==============================================================================
@@ -382,6 +381,7 @@ with st.sidebar:
 
     opzioni_menu = [
         "🧪 TradingView Pro",
+        "📈 Analisi GARCH Volatilità",
     ]
 
     if "jump_to_modulo" in st.session_state and st.session_state["jump_to_modulo"]:
@@ -421,7 +421,12 @@ descrizioni_moduli = {
         "oscillatori sincronizzati (RSI, MACD), Triple Volume Profile e strumenti di disegno "
         "con aggancio magnetico alle candele (Trendline, Livelli Orizzontali, Rettangoli, Fibonacci e Tool R:R)."
     ),
- 
+        "📈 Analisi GARCH Volatilità": (
+        "**Scopo Operativo & Architettura:** Modellizza i fenomeni finanziari dei cluster di volatilità (*volatility clustering*) "
+        "e i picchi asimmetrici generati dal panico di mercato. Sfrutta la libreria econometrica `arch` per configurare i parametri "
+        "condizionali e confrontare le varianti Standard GARCH (simmetrico), GJR-GARCH (effetto leva a soglia) ed EGARCH (esponenziale), "
+        "sovrapponendo la varianza annualizzata ai rendimenti logaritmici."
+    ),
 }
 
 if scelta_modulo in descrizioni_moduli:
@@ -498,7 +503,7 @@ if scelta_modulo == "🧪 TradingView Pro":
             tv_z_win = 50
             if tv_sub_osc == "Z-Score (±2)":
                 tv_z_win = st.slider("Finestra Z-Score (Candele):", min_value=20, max_value=100, value=50, step=5, key="tv_z_win_sl")
-            tv_rr_ratio = st.selectbox("Rapporto R:R per Tool Posizione:", [2.0, 3.0, 4.0], index=1, key="tv_test_rr_mult")
+            tv_rr_ratio = st.selectbox("Rapporto R:R per Tool Posizione:", [1.4, 2.0, 3.0, 4.0], index=1, key="tv_test_rr_mult")
 
     # 3. MENU A SCOMPARSA: STRUMENTI DI ANALISI GRAFICA
     with st.expander("✏️ Strumenti di Analisi Grafica", expanded=False):
@@ -940,3 +945,249 @@ if scelta_modulo == "🧪 TradingView Pro":
             st.session_state["tv_shapes_list"] = [s for s in st.session_state["tv_shapes_list"] if s["ticker"] != tv_ticker]
             st.rerun()
 
+# ==========================================
+# TAB 02: ANALISI GARCH Volatilità (PARTE 1/3)
+# ==========================================
+if scelta_modulo == "📈 Analisi GARCH Volatilità":
+
+    st.subheader("📈 Studio Quantitativo della Volatilità (GARCH) & Anticipo Cambio Trend")
+
+    with st.expander("📖 Guida Dettagliata all'Utilizzo: Come Configurare, Leggere e Anticipare il Trend", expanded=True):
+        st.markdown("""
+        ### 🎯 Cosa fa questo modulo e perché anticipa i cambi di trend?
+        I modelli **GARCH** (*Generalized Autoregressive Conditional Heteroskedasticity*) non prevedono direttamente se il prezzo salirà o scenderà, ma **prevedono l'energia e il nervosismo del mercato**. Nei mercati finanziari, **la volatilità cambia regime prima che il trend del prezzo diventi evidente a tutti**:
+        * **Prima di un grande rialzo:** La volatilità si comprime ai minimi (*Volatility Squeeze*). Il mercato sembra "addormentato", ma sta accumulando energia.
+        * **Alla fine di un crollo:** La volatilità esplode verso un picco di panico (*Climax*). Nel momento esatto in cui la curva GARCH smette di salire e inizia a piegare verso il basso, il trend ribassista è spesso già finito.
+        * **All'inizio di un crollo:** La volatilità inizia a salire bruscamente mentre il prezzo perde la sua media di breve periodo (EMA 21).
+
+        ---
+
+        ### ⚙️ Come si usa (Configurazione Parametri)
+        1. **Ticker & Orizzonte:** Inserisci il simbolo (es. `AAPL`, `NVDA`, `^GSPC`, `BTC-USD`). Usa **3 Anni** o **5 Anni** per avere abbastanza cicli di mercato.
+        2. **Parametri (p, q):**
+           * **`p = 1, q = 1`** è lo standard istituzionale più stabile e affidabile.
+           * Aumenta **`p` (es. 2 o 3)** se vuoi che il modello reagisca più velocemente agli shock degli ultimi giorni.
+        3. **Variante Modello:**
+           * **GJR-GARCH (Consigliato per Azioni e Indici):** Cattura l'*effetto leva* (i crolli generano più panico dei rialzi) ed è il più efficace per individuare i minimi di panico.
+           * **EGARCH:** Ideale per Crypto e asset molto esplosivi, perché modella la volatilità in scala logaritmica.
+           * **Standard GARCH:** Modello simmetrico di base.
+
+        ---
+
+        ### 🚦 Come leggere i Segnali Anticipatori sul Grafico
+        Il motore incrocia la **Volatilità Condizionale GARCH** con la **EMA 21** e i **Percentili Storici (252 giorni)** per generare 3 segnali visivi direttamente sul grafico:
+        * **🟣 Rombo Viola — SQUEEZE (Compressione Estrema):** La volatilità GARCH è scesa sotto il **15° percentile** dell'ultimo anno. Indica calma piatta prima di un movimento direzionale violento (prepara ordini in breakout).
+        * **🟢 Triangolo Verde — INVERSIONE DA PANICO (Climax Bottom):** La volatilità GARCH ha superato l'**85° percentile** (panico estremo) e sta **iniziando a scendere**, mentre il prezzo recupera forza. Spesso anticipa l'inversione rialzista prima degli oscillatori tradizionali.
+        * **🔴 Triangolo Rosso — ESPANSIONE RIBASSISTA (Trend Break):** La volatilità GARCH accelera sopra la sua media (+15%) mentre il prezzo rompe al ribasso la **EMA 21**. Segnala l'avvio di una fase distributiva o ribassista.
+        """)
+
+    g_col1, g_col2, g_col3 = st.columns(3)
+    with g_col1:
+        garch_ticker = st.text_input("Inserisci Ticker da analizzare (es. AAPL, BTC-USD, ^GSPC):", value="AAPL", key="garch_tk_input")
+        garch_periodo = st.selectbox("Orizzonte storico dati:", ["1 Anno", "3 Anni", "5 Anni", "10 Anni", "Storico Massimo"], index=1, key="garch_per_sel")
+        mappa_periodi_garch = {"1 Anno": "1y", "3 Anni": "3y", "5 Anni": "5y", "10 Anni": "10y", "Storico Massimo": "max"}
+    with g_col2:
+        param_p = st.slider("Ordine Autoregressivo - Shock Recenti (p):", min_value=1, max_value=5, value=1, key="garch_p")
+        param_q = st.slider("Ordine Media Mobile - Persistenza Volatilità (q):", min_value=1, max_value=5, value=1, key="garch_q")
+    with g_col3:
+        mod_type = st.selectbox("Variante Modello GARCH:", ["GJR-GARCH (Asimmetrico)", "EGARCH", "Standard GARCH"], index=0, key="garch_type")
+        finestra_regime = st.slider("Finestra Regimi Volatilità (Giorni):", min_value=60, max_value=504, value=252, step=21, key="garch_win_reg")
+
+    st.markdown("---")
+    if mod_type == "Standard GARCH":
+        st.info(f"ℹ️ **Standard GARCH ({param_p}, {param_q}) [Simmetrico]:** Un rialzo del +5% e un crollo del -5% hanno lo stesso identico impatto sulla volatilità futura.")
+    elif mod_type == "GJR-GARCH (Asimmetrico)":
+        st.info(f"ℹ️ **GJR-GARCH ({param_p}, {param_q}) [Asimmetrico a Soglia]:** Attiva un fattore extra (*Gamma*) quando i rendimenti sono negativi, catturando il panico da crollo.")
+    elif mod_type == "EGARCH":
+        st.info(f"ℹ️ **EGARCH ({param_p}, {param_q}) [Esponenziale]:** Modella il logaritmo della volatilità, adattandosi rapidamente a shock estremi senza distorsioni.")
+    st.markdown("---")
+
+    # ==========================================
+    # TAB 02: MOTORE ECONOMETRICO & KPI (PARTE 2/3)
+    # ==========================================
+    if st.button("📊 Elabora Modello Volatilità & Segnali Trend", type="primary", key="garch_btn_start"):
+        st.info(f"Recupero dati storici e calcolo regimi GARCH per {garch_ticker}...")
+        df_g = yf.download(tickers=garch_ticker, period=mappa_periodi_garch[garch_periodo], interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
+        
+        if df_g is not None and len(df_g) > 100:
+            df_g.columns = [str(c).strip() for c in df_g.columns]
+            df_g["Close_F"] = df_g["Close"].astype(float)
+            df_g["Returns"] = 100 * np.log(df_g["Close_F"] / df_g["Close_F"].shift(1))
+            df_g = df_g.dropna().copy()
+            
+            with st.spinner("Stima econometrica GARCH e rilevamento cambi di regime..."):
+                try:
+                    if mod_type == "Standard GARCH":
+                        mod = arch_model(df_g["Returns"], p=param_p, q=param_q, vol="GARCH", dist="normal")
+                    elif mod_type == "GJR-GARCH (Asimmetrico)":
+                        mod = arch_model(df_g["Returns"], p=param_p, o=1, q=param_q, vol="GARCH", dist="normal")
+                    elif mod_type == "EGARCH":
+                        mod = arch_model(df_g["Returns"], p=param_p, q=param_q, vol="EGARCH", dist="normal")
+                        
+                    res_garch = mod.fit(disp="off")
+                    
+                    df_g["Cond_Vol"] = res_garch.conditional_volatility * np.sqrt(252)
+                    df_g["EMA21"] = df_g["Close_F"].ewm(span=21, adjust=False).mean()
+                    
+                    win_eff = min(finestra_regime, max(30, len(df_g) // 2))
+                    df_g["Vol_Rank"] = df_g["Cond_Vol"].rolling(win_eff).rank(pct=True) * 100.0
+                    df_g["Vol_SMA10"] = df_g["Cond_Vol"].rolling(10).mean()
+                    df_g["Vol_Diff"] = df_g["Cond_Vol"].diff()
+
+                    cond_squeeze = (df_g["Vol_Rank"] <= 15.0) & (df_g["Vol_Rank"].shift(1) > 15.0)
+                    
+                    cond_panic_rev = (
+                        (df_g["Vol_Rank"].shift(1) >= 85.0) &
+                        (df_g["Vol_Diff"] < 0) &
+                        (df_g["Vol_Diff"].shift(1) >= 0) &
+                        (df_g["Close_F"] > df_g["Close_F"].shift(1))
+                    )
+                    
+                    cond_bear_break = (
+                        (df_g["Cond_Vol"] > df_g["Vol_SMA10"] * 1.15) &
+                        (df_g["Close_F"] < df_g["EMA21"]) &
+                        (df_g["Close_F"].shift(1) >= df_g["EMA21"].shift(1))
+                    )
+
+                    vol_attuale = float(df_g["Cond_Vol"].iloc[-1])
+                    rank_attuale = float(df_g["Vol_Rank"].iloc[-1]) if not np.isnan(df_g["Vol_Rank"].iloc[-1]) else 50.0
+                    prezzo_last = float(df_g["Close_F"].iloc[-1])
+                    ema21_last = float(df_g["EMA21"].iloc[-1])
+                    var_vol_1d = float(df_g["Vol_Diff"].iloc[-1])
+
+                    if rank_attuale <= 15.0:
+                        regime_txt = "🟣 COMPRESSIONE (Squeeze)"
+                        azione_txt = "Energia accumulata: attendi breakout"
+                    elif rank_attuale >= 85.0 and var_vol_1d < 0:
+                        regime_txt = "🟢 PICCO PANICO IN CALO"
+                        azione_txt = "Possibile inversione rialzista"
+                    elif rank_attuale >= 85.0 and var_vol_1d >= 0:
+                        regime_txt = "🚨 PANICO IN ESPANSIONE"
+                        azione_txt = "Alta turbolenza: attendi stabilizzazione"
+                    elif prezzo_last > ema21_last and var_vol_1d <= 0:
+                        regime_txt = "🔵 TREND RIALZISTA ORDINATO"
+                        azione_txt = "Volatilità sotto controllo"
+                    else:
+                        regime_txt = "🟡 TRANSIZIONE / NEUTRALE"
+                        azione_txt = "Monitora incrocio EMA 21"
+
+                    k1, k2, k3, k4 = st.columns(4)
+                    with k1:
+                        st.metric("Volatilità GARCH Attuale", f"{round(vol_attuale, 2)} %", f"{round(var_vol_1d, 2)}% vs ieri")
+                    with k2:
+                        st.metric("Percentile Storico Volatilità", f"{round(rank_attuale, 1)}° pct", f"Finestra {win_eff}g")
+                    with k3:
+                        st.metric("Prezzo vs EMA 21", f"$ {round(prezzo_last, 2)}", f"EMA21: $ {round(ema21_last, 2)}")
+                    with k4:
+                        st.metric("Regime & Segnale Trend", regime_txt, azione_txt)
+                    # ==========================================
+                    # TAB 02: GRAFICI E REGISTRO SEGNALI (PARTE 3/3)
+                    # ==========================================
+                    st.markdown("##### 📊 Correlazione Prezzo, EMA 21, Segnali Anticipatori e Volatilità GARCH")
+                    fig_combined = grp.Figure()
+
+                    fig_combined.add_trace(grp.Scatter(
+                        x=df_g.index, y=df_g["Close_F"], mode="lines",
+                        name=f"Prezzo ({garch_ticker})", line=dict(color="#38bdf8", width=2)
+                    ))
+                    fig_combined.add_trace(grp.Scatter(
+                        x=df_g.index, y=df_g["EMA21"], mode="lines",
+                        name="EMA 21 (Trend Breve)", line=dict(color="#facc15", width=1.4, dash="dot")
+                    ))
+                    fig_combined.add_trace(grp.Scatter(
+                        x=df_g.index, y=df_g["Cond_Vol"], mode="lines",
+                        name=f"Volatilità {mod_type} (%)", line=dict(color="#f43f5e", width=1.7),
+                        yaxis="y2"
+                    ))
+
+                    df_sq = df_g[cond_squeeze]
+                    if not df_sq.empty:
+                        fig_combined.add_trace(grp.Scatter(
+                            x=df_sq.index, y=df_sq["Close_F"], mode="markers",
+                            marker=dict(color="#a855f7", size=10, symbol="diamond"),
+                            name="🟣 Squeeze (Compressione)"
+                        ))
+
+                    df_pr = df_g[cond_panic_rev]
+                    if not df_pr.empty:
+                        fig_combined.add_trace(grp.Scatter(
+                            x=df_pr.index, y=df_pr["Close_F"], mode="markers",
+                            marker=dict(color="#22c55e", size=13, symbol="triangle-up"),
+                            name="🟢 Inversione da Panico"
+                        ))
+
+                    df_bb = df_g[cond_bear_break]
+                    if not df_bb.empty:
+                        fig_combined.add_trace(grp.Scatter(
+                            x=df_bb.index, y=df_bb["Close_F"], mode="markers",
+                            marker=dict(color="#ef4444", size=13, symbol="triangle-down"),
+                            name="🔴 Espansione Ribassista"
+                        ))
+
+                    fig_combined.update_layout(
+                        template="plotly_dark",
+                        height=500,
+                        margin=dict(l=20, r=20, t=15, b=20),
+                        xaxis_rangeslider_visible=False,
+                        dragmode="pan",
+                        hovermode="x unified",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        xaxis=dict(gridcolor="rgba(51, 65, 85, 0.25)", fixedrange=False),
+                        yaxis=dict(
+                            title=dict(text=f"Prezzo {garch_ticker} (USD)", font=dict(color="#38bdf8")),
+                            tickfont=dict(color="#38bdf8"),
+                            gridcolor="rgba(51, 65, 85, 0.25)",
+                            fixedrange=False
+                        ),
+                        yaxis2=dict(
+                            title=dict(text="Volatilità Annualizzata GARCH (%)", font=dict(color="#f43f5e")),
+                            tickfont=dict(color="#f43f5e"),
+                            anchor="x",
+                            overlaying="y",
+                            side="right",
+                            gridcolor="rgba(0, 0, 0, 0)",
+                            fixedrange=False
+                        )
+                    )
+                    st.plotly_chart(fig_combined, use_container_width=True, key="garch_combined_chart", config={"scrollZoom": True})
+
+                    st.markdown("##### 🌡️ Termometro Regime di Volatilità (Percentile Rolling 0–100%)")
+                    fig_rank = grp.Figure()
+                    fig_rank.add_trace(grp.Scatter(
+                        x=df_g.index, y=df_g["Vol_Rank"], mode="lines",
+                        name="Percentile Volatilità", line=dict(color="#f59e0b", width=1.8),
+                        fill="tozeroy", fillcolor="rgba(245, 158, 11, 0.12)"
+                    ))
+                    fig_rank.add_hline(y=85, line_dash="dash", line_color="#ef4444", annotation_text="Zona Panico (85°)")
+                    fig_rank.add_hline(y=15, line_dash="dash", line_color="#a855f7", annotation_text="Zona Squeeze (15°)")
+                    fig_rank.update_layout(
+                        template="plotly_dark",
+                        height=260,
+                        margin=dict(l=20, r=20, t=15, b=20),
+                        dragmode="pan",
+                        yaxis=dict(title="Percentile (%)", range=[0, 100], fixedrange=False),
+                        xaxis=dict(fixedrange=False),
+                        showlegend=False
+                    )
+                    st.plotly_chart(fig_rank, use_container_width=True, key="garch_rank_chart", config={"scrollZoom": True})
+
+                    st.markdown("##### 📋 Registro Ultimi Segnali Anticipatori Rilevati")
+                    eventi_garch = []
+                    for idx_dt, row_g in df_g.iterrows():
+                        if cond_squeeze.loc[idx_dt]:
+                            eventi_garch.append({"Data": idx_dt.strftime("%d/%m/%Y"), "Segnale": "🟣 SQUEEZE (Compressione)", "Prezzo ($)": round(row_g["Close_F"], 2), "Volatilità GARCH (%)": round(row_g["Cond_Vol"], 2)})
+                        if cond_panic_rev.loc[idx_dt]:
+                            eventi_garch.append({"Data": idx_dt.strftime("%d/%m/%Y"), "Segnale": "🟢 INVERSIONE DA PANICO", "Prezzo ($)": round(row_g["Close_F"], 2), "Volatilità GARCH (%)": round(row_g["Cond_Vol"], 2)})
+                        if cond_bear_break.loc[idx_dt]:
+                            eventi_garch.append({"Data": idx_dt.strftime("%d/%m/%Y"), "Segnale": "🔴 ESPANSIONE RIBASSISTA", "Prezzo ($)": round(row_g["Close_F"], 2), "Volatilità GARCH (%)": round(row_g["Cond_Vol"], 2)})
+
+                    if eventi_garch:
+                        df_ev_garch = pd.DataFrame(eventi_garch).iloc[::-1].head(15)
+                        st.dataframe(df_ev_garch, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Nessun segnale estremo rilevato nella finestra selezionata.")
+
+                except Exception as ex:
+                    st.error(f"Errore durante la convergenza del modello GARCH: {ex}")
+        else:
+            st.warning("Dati storici insufficienti. Prova ad estendere l'orizzonte temporale o verifica il ticker.")
