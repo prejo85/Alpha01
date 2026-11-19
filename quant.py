@@ -253,6 +253,7 @@ if "asset_type_index" not in st.session_state:
 T_ID = os.getenv("TELEGRAM_CHAT_ID", "2072895073")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
+
 # ==============================================================================
 # DATABASE INTERNO DEI PANIERI AZIONARI AGGIORNATO E AMPLIATO
 # ==============================================================================
@@ -413,7 +414,7 @@ st.title(f"{scelta_modulo}")
 # ==============================================================================
 descrizioni_moduli = {
 
-        "🧪 TradingView Pro ": (
+        "🧪 TradingView Pro": (
         "**Scopo Operativo & Architettura:** Workstation grafica interattiva multi-timeframe (15m–1M) "
         "dotata di indicatori tecnici sovrapponibili (EMA 20/50/100/200, Bande di Bollinger, VWAP), "
         "oscillatori sincronizzati (RSI, MACD), Triple Volume Profile e strumenti di disegno "
@@ -434,7 +435,7 @@ if scelta_modulo in descrizioni_moduli:
 # ==============================================================================
 # TAB 01: TRADINGVIEW PRO LAB (PARTE 1/4 - CONTROLLI & MENU A SCOMPARSA)
 # ==============================================================================
-if scelta_modulo == "🧪 TradingView Pro ":
+if scelta_modulo == "🧪 TradingView Pro":
 
     st.subheader("🧪 TradingView Pro — Workstation Grafica Avanzata")
 
