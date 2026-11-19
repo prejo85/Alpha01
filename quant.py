@@ -1,8 +1,3 @@
-import os
-import json
-import base64
-from urllib.parse import quote
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -10,22 +5,29 @@ import yfinance as yf
 import plotly.graph_objects as grp
 from plotly.subplots import make_subplots
 import requests
+import json
+import matplotlib.pyplot as plt
 from arch import arch_model
 from scipy import stats
-from scipy.signal import argrelextrema
-from scipy.optimize import minimize
+import os
 from dotenv import load_dotenv
+from urllib.parse import quote
 
+
+# Carica le chiavi dal file .env (se presente)
 load_dotenv()
 
 st.set_page_config(layout="wide", page_title="POC Scanner Pro", page_icon="📐")
 
+import base64
+
+# ==============================================================================
+# --- SCHERMATA DI ACCESSO (LOGIN PAGE CON SFONDO PERSONALIZZATO) ---
+# ==============================================================================
 if "autenticato" not in st.session_state:
     st.session_state["autenticato"] = False
 
-if "asset_type_index" not in st.session_state:
-    st.session_state["asset_type_index"] = 0
-
+# Legge eventuali parametri URL in arrivo da Telegram prima del login
 params_init = st.query_params
 if "ticker" in params_init and not st.session_state.get("url_gia_letto", False):
     tk_url = str(params_init["ticker"]).upper().strip()
@@ -35,13 +37,11 @@ if "ticker" in params_init and not st.session_state.get("url_gia_letto", False):
     st.session_state["can_tf"] = tf_url
     st.session_state["url_gia_letto"] = True
 
-
 def _get_base64_bg(percorso_img):
     if os.path.exists(percorso_img):
         with open(percorso_img, "rb") as f:
             return base64.b64encode(f.read()).decode()
     return ""
-
 
 if not st.session_state["autenticato"]:
     bg_b64 = _get_base64_bg("sfondo_login.png")
@@ -53,9 +53,11 @@ if not st.session_state["autenticato"]:
 
     st.markdown(f"""
     <style>
+        /* Nasconde sidebar e header nella pagina di login */
         section[data-testid="stSidebar"] {{ display: none !important; }}
         header[data-testid="stHeader"] {{ background: transparent !important; }}
 
+        /* Sfondo a tutto schermo con l'immagine caricata */
         .stApp {{
             {bg_css}
             background-size: cover !important;
@@ -63,6 +65,7 @@ if not st.session_state["autenticato"]:
             background-attachment: fixed !important;
         }}
 
+        /* Box vetro scuro compatto centrato per il form di login */
         div[data-testid="stForm"] {{
             background: rgba(9, 11, 17, 0.72) !important;
             backdrop-filter: blur(10px) !important;
@@ -99,7 +102,7 @@ if not st.session_state["autenticato"]:
 
     st.markdown("<div style='height: 12vh;'></div>", unsafe_allow_html=True)
 
-    _, col_centro, _ = st.columns([1.4, 1.6, 1.4])
+    col_sx, col_centro, col_dx = st.columns([1.4, 1.6, 1.4])
     with col_centro:
         with st.form("form_login_quant"):
             st.markdown("""
@@ -124,16 +127,33 @@ if not st.session_state["autenticato"]:
                     st.error("❌ Credenziali non valide. Riprova.")
 
     st.stop()
+
+
+# Intercetta i link diretti provenienti dagli alert Telegram
+params = st.query_params
+if "ticker" in params and not st.session_state.get("url_gia_letto", False):
+    tk_url = str(params["ticker"]).upper().strip()
+    tf_url = str(params.get("tf", "Giornaliero (Daily)")).strip()
+    
+    st.session_state["menu_navigazione_moduli"] = "📺 TradingView Interactive Canvas"
+    st.session_state["can_tk"] = tk_url
+    st.session_state["can_tf"] = tf_url
+    st.session_state["url_gia_letto"] = True
+
+# ==============================================================================
+# STILE DARK PREMIUM DA PREVIEW GRAFICA (SIDEBAR COORDINATA)
+# ==============================================================================
 st.markdown("""
 <style>
-    @import url('https://googleapis.com');
-
+    
+    /* Riduce leggermente il font dei valori delle metriche per evitare troncamenti */
     div[data-testid="stMetricValue"] > div {
         font-size: 1.55rem !important;
         white-space: normal !important;
         line-height: 1.2 !important;
     }
 
+    /* Forza il puntatore standard (freccia) su tutti i grafici Plotly */
     .js-plotly-plot .plotly .cursor-crosshair,
     .js-plotly-plot .plotly .cursor-move,
     .js-plotly-plot .plotly .cursor-pointer,
@@ -143,26 +163,31 @@ st.markdown("""
         cursor: default !important;
     }
 
+    @import url('https://googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
+    
+    /* Sfondo principale con gradiente radiale scuro */
     .stApp { 
         background: radial-gradient(circle at top right, #111524 0%, #07080d 100%) !important; 
         font-family: 'Plus Jakarta Sans', sans-serif !important; 
         color: #f1f5f9 !important; 
     }
-
+    
+    /* Barra Laterale (Sidebar) Hi-Tech */
     section[data-testid="stSidebar"] {
         background-color: #090b11 !important;
         border-right: 1px solid rgba(56, 189, 248, 0.08) !important;
     }
-
+    
+    /* Nasconde il pallino nativo brutto dei radio button di Streamlit */
     section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label [data-testid="stWidgetBorder"] {
         display: none !important;
     }
-
     section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] [data-testid="stMarkdownContainer"] p {
         font-size: 14px !important;
         font-weight: 600 !important;
     }
-
+    
+    /* Trasforma i testi dei radio button in pulsanti rettangolari con icone visibili */
     section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
         background: rgba(255, 255, 255, 0.01) !important;
         border: 1px solid rgba(255, 255, 255, 0.03) !important;
@@ -175,14 +200,16 @@ st.markdown("""
         color: #94a3b8 !important;
         cursor: pointer !important;
     }
-
+    
+    /* Effetto Hover sulle voci del menu laterale */
     section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:hover {
         background: rgba(56, 189, 248, 0.04) !important;
         border-color: rgba(56, 189, 248, 0.2) !important;
         color: #38bdf8 !important;
         box-shadow: 0 4px 12px rgba(56, 189, 248, 0.05);
     }
-
+    
+    /* STATO ATTIVO SELEZIONATO: Pulsante illuminato al neon a sinistra */
     section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] [data-checked="true"] {
         background: linear-gradient(90deg, rgba(79, 70, 229, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%) !important;
         border-color: rgba(56, 189, 248, 0.6) !important;
@@ -190,14 +217,16 @@ st.markdown("""
         font-weight: 700 !important;
         box-shadow: inset 3px 0px 0px #38bdf8, 0 4px 20px rgba(56, 189, 248, 0.1);
     }
-
+    
+    /* Box delle metriche finanziarie stile Frosted Glass */
     div[data-testid="stMetric"] { 
         background: rgba(13, 17, 28, 0.7) !important; 
         border: 1px solid rgba(56, 189, 248, 0.1) !important; 
         border-radius: 12px !important; 
         backdrop-filter: blur(12px);
     }
-
+    
+    /* Bottoni di azione con gradiente lineare */
     div.stButton > button:first-child { 
         background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%) !important; 
         color: #ffffff !important; 
@@ -206,7 +235,8 @@ st.markdown("""
         padding: 0.7rem 2.2rem !important; 
         border: none !important;
     }
-
+    
+    /* Input e selettori a tendina coordinati scuri */
     div[data-baseweb="select"], input, textarea { 
         background-color: #0f172a !important; 
         border-color: #334155 !important; 
@@ -214,10 +244,18 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-T_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+st.title("📐 Dashboard Quantanalisys")
+
+if "asset_type_index" not in st.session_state:
+    st.session_state.asset_type_index = 0
+# PROTEZIONE: Recupero sicuro dei dati sensibili dall'ambiente
+T_ID = os.getenv("TELEGRAM_CHAT_ID", "2072895073")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
-
+# ==============================================================================
+# DATABASE INTERNO DEI PANIERI AZIONARI AGGIORNATO E AMPLIATO
+# ==============================================================================
 SP500_FULL = (
     "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,"
     "AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,"
@@ -254,7 +292,6 @@ FTSEMIB_FULL = (
     "HER.MI,INW.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,SGO.MI,SRG.MI,"
     "STLAM.MI,STMPA.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI,BMPS.MI,BPSO.MI,BC.MI,AVIO.MI,IP.MI"
 )
-
 TOTAL1_LEADERS = "BTC-USD,ETH-USD,USDT-USD,USDC-USD"
 TOTAL2_MAJORS = "SOL-USD,BNB-USD,XRP-USD,ADA-USD,TRX-USD,DOT-USD,LINK-USD,AVAX-USD,TON-USD,SHIB-USD,SUI-USD"
 TOTAL3_ALTS = (
@@ -278,77 +315,46 @@ EUROSTOXX_FULL = (
 )
 
 ELENCO_PANIERI = [
-    "S&P 500",
-    "NASDAQ 100",
-    "FTSE MIB (FIB)",
-    "Crypto",
-    "US Mid-Caps",
-    "Crypto & AI Stocks",
+    "S&P 500", 
+    "NASDAQ 100", 
+    "FTSE MIB (FIB)", 
+    "Crypto", 
+    "US Mid-Caps", 
+    "Crypto & AI Stocks", 
     "Euro Stoxx 50"
 ]
-
-PANIERI_MAP = {
-    "S&P 500": SP500_FULL,
-    "NASDAQ 100": NASDAQ_FULL,
-    "FTSE MIB (FIB)": FTSEMIB_FULL,
-    "Crypto": CRYPTO_FULL,
-    "US Mid-Caps": MIDCAP_US,
-    "Crypto & AI Stocks": CRYPTO_STOCKS,
-    "Euro Stoxx 50": EUROSTOXX_FULL
-}
-
-
 def ottieni_paniere(nome_paniere):
-    return PANIERI_MAP.get(nome_paniere, "AAPL,MSFT")
-
+    if nome_paniere == "S&P 500": return SP500_FULL
+    elif nome_paniere == "NASDAQ 100": return NASDAQ_FULL
+    elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
+    elif nome_paniere == "Crypto": return CRYPTO_FULL
+    elif nome_paniere == "US Mid-Caps": return MIDCAP_US
+    elif nome_paniere == "Crypto & AI Stocks": return CRYPTO_STOCKS
+    elif nome_paniere == "Euro Stoxx 50": return EUROSTOXX_FULL
+    return "AAPL,MSFT"
 
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
-    if not BOT_TOKEN or not chat_id:
+    if not BOT_TOKEN:
         return False
-    payload = {
-        "chat_id": int(chat_id),
-        "text": str(testo_messaggio),
-        "parse_mode": "HTML",
-        "disable_web_page_preview": False
-    }
+    payload = {"chat_id": int(chat_id), "text": str(testo_messaggio), "parse_mode": "HTML", "disable_web_page_preview": False}
     try:
-        url_pulito = f"https://telegram.org{BOT_TOKEN}/sendMessage"
+        # PROTEZIONE: URL composto dinamicamente usando la variabile d'ambiente
+        url_pulito = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         res = requests.post(url_pulito, data=json.dumps(payload), headers=TESTA_INTERNET, timeout=12)
         return res.status_code == 200
     except Exception:
         return False
-
-
+        
+# ==============================================================================
+# STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
+# ==============================================================================
 with st.sidebar:
-    if os.path.exists("logo_fmjp.png"):
-        st.image("logo_fmjp.png", use_container_width=True)
+    st.image("logo_fmjp.png", use_container_width=True)
     st.markdown("## 📺 Seleziona l'analisi che vuoi approfondire:")
     st.markdown("🤖 **Menu Navigazione Moduli**")
 
     opzioni_menu = [
-        "📡 Sala dei Segnali (CSV)",
-        "📁 Analisi Triple-POC",
-        "📐 Analisi Geometrica POC",
-        "🚀 Breakout Trend-Following",
-        "📉 Backtest Z-Score",
-        "📊 Ottimizzatore & Correlazione",
-        "🔔 Alert Telegram Classic",
-        "🔔 Alert Telegram Z-Score",
-        "📈 Analisi GARCH Volatilità",
-        "🌊 Studio Divergenze Volatilità",
-        "🐂🐻 Cicli Bull & Bear Market",
-        "📊 Recovery Storico Drawdown",
-        "🥣 Scanner Rounding Bottom",
-        "📺 TradingView Interactive Canvas",
-        "🧪 TradingView Pro Lab (Test)",
-        "🛡️ Screener Indici & VIX",
-        "📉 Drop Giornaliero Cumulato",
-        "🏛️ Simulatore Obbligazioni & BTP",
-        "📈 Frontiera Efficiente Markowitz",
-        "📅 Scanner Stagionalità & T-Test",
-        "🧭 Regime Hurst & Test ADF",
-        "🎲 Monte Carlo & Value at Risk",
-        "💎 Edge Statistico Buyback",
+        "🧪 TradingView Pro",
     ]
 
     if "jump_to_modulo" in st.session_state and st.session_state["jump_to_modulo"]:
@@ -364,13 +370,546 @@ with st.sidebar:
         label_visibility="collapsed",
         key="menu_navigazione_moduli",
     )
-
+    
     st.markdown("---")
     if st.button("🔒 Disconnetti (Logout)", use_container_width=True):
         st.session_state["autenticato"] = False
         st.rerun()
 
+
     st.markdown("---")
     st.caption("Quant Framework Dashboard Pro v3.0 📐")
 
+# Configurazione del Titolo dinamico della pagina principale
 st.title(f"{scelta_modulo}")
+
+# ==============================================================================
+# DISCOVERY COMPONENT: NOTE DI ARCHITETTURA E SCOPO OPERATIVO DEL MODULO SELEZIONATO
+# ==============================================================================
+descrizioni_moduli = {
+
+        "🧪 TradingView Pro ": (
+        "**Scopo Operativo & Architettura:** Workstation grafica interattiva multi-timeframe (15m–1M) "
+        "dotata di indicatori tecnici sovrapponibili (EMA 20/50/100/200, Bande di Bollinger, VWAP), "
+        "oscillatori sincronizzati (RSI, MACD), Triple Volume Profile e strumenti di disegno "
+        "con aggancio magnetico alle candele (Trendline, Livelli Orizzontali, Rettangoli, Fibonacci e Tool R:R)."
+    ),
+ 
+}
+
+if scelta_modulo in descrizioni_moduli:
+    st.markdown(f"""
+    <div style='background: rgba(56, 189, 248, 0.05); padding: 16px; border-radius: 12px; margin-bottom: 25px; border: 1px solid rgba(56, 189, 248, 0.15);'>
+        <p style='margin:0; font-size:14px; line-height:1.6; color:#94a3b8;'>
+            💡 {descrizioni_moduli[scelta_modulo]}
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+# ==============================================================================
+# TAB 01: TRADINGVIEW PRO LAB (PARTE 1/4 - CONTROLLI & MENU A SCOMPARSA)
+# ==============================================================================
+if scelta_modulo == "🧪 TradingView Pro ":
+
+    st.subheader("🧪 TradingView Pro — Workstation Grafica Avanzata")
+
+    # 1. BARRA SUPERIORE PULITA (SOLO TICKER, TIMEFRAME E STORICO)
+    tv_c1, tv_c2, tv_c3 = st.columns(3)
+    with tv_c1:
+        tv_ticker = st.text_input("Simbolo / Ticker:", value="Inserisci il ticker", key="tv_test_tk").strip().upper()
+    with tv_c2:
+        tv_tf_map = {
+            "15 Minuti (15m)": "15m",
+            "1 Ora (1h)": "1h",
+            "4 Ore (4h)": "4h",
+            "Giornaliero (1D)": "1d",
+            "Settimanale (1W)": "1wk",
+            "Mensile (1M)": "1mo",
+        }
+        tv_tf_label = st.selectbox("Timeframe:", list(tv_tf_map.keys()), index=3, key="tv_test_tf")
+        tv_tf = tv_tf_map[tv_tf_label]
+    with tv_c3:
+        if tv_tf == "15m":
+            opz_per = {"5 Giorni": "5d", "1 Mese": "1mo", "2 Mesi": "60d"}
+        elif tv_tf in ["1h", "4h"]:
+            opz_per = {"1 Mese": "1mo", "3 Mesi": "3mo", "6 Mesi": "6mo", "1 Anno": "1y", "2 Anni": "2y"}
+        else:
+            opz_per = {"6 Mesi": "6mo", "1 Anno": "1y", "2 Anni": "2y", "5 Anni": "5y", "Massimo": "max"}
+        tv_per_label = st.selectbox("Orizzonte Storico:", list(opz_per.keys()), index=min(1, len(opz_per)-1), key="tv_test_per")
+        tv_per = opz_per[tv_per_label]
+
+    # 2. MENU A SCOMPARSA: INDICATORI TECNICI, POC, SCALA LOG & OSCILLATORI
+    with st.expander("📊 Indicatori Tecnici, Volume Profile, Scala & Oscillatori", expanded=False):
+        ind_col1, ind_col2, ind_col3 = st.columns(3)
+        with ind_col1:
+            tv_log_scale = st.checkbox("📐 Scala Logaritmica", value=False, key="tv_test_log")
+            tv_show_vp = st.checkbox("📊 Mostra 3 Volume Profile (POC)", value=True, key="tv_test_vp")
+            tv_ema_scelte = st.multiselect(
+                "Medie Mobili Esponenziali (EMA):",
+                options=["EMA 20", "EMA 50", "EMA 100", "EMA 200"],
+                default=["EMA 20", "EMA 50", "EMA 200"],
+                key="tv_test_emas"
+            )
+            tv_bb = st.checkbox("Bande di Bollinger (20, 2)", value=False, key="tv_test_bb")
+        with ind_col2:
+            tv_vwap = st.checkbox("VWAP Ancorato al Periodo", value=False, key="tv_test_vwap")
+            tv_vol = st.checkbox("Istogramma Volumi", value=True, key="tv_test_vol")
+            tv_swings = st.checkbox("🔺🔻 Mostra Swing High / Low", value=False, key="tv_test_swings")
+            tv_swing_order = st.slider(
+                "Sensibilità Swing (Candele dx/sx):",
+                min_value=2, max_value=15, value=5, step=1,
+                disabled=not tv_swings,
+                key="tv_swing_ord"
+            )
+        with ind_col3:
+            tv_sub_osc = st.radio(
+                "Oscillatore Inferiore:",
+                options=["Nessuno", "RSI (14)", "MACD (12, 26, 9)", "Z-Score (±2)"],
+                index=3,
+                key="tv_test_osc"
+            )
+            tv_z_win = 50
+            if tv_sub_osc == "Z-Score (±2)":
+                tv_z_win = st.slider("Finestra Z-Score (Candele):", min_value=20, max_value=100, value=50, step=5, key="tv_z_win_sl")
+            tv_rr_ratio = st.selectbox("Rapporto R:R per Tool Posizione:", [2.0, 3.0, 4.0], index=1, key="tv_test_rr_mult")
+
+    # 3. MENU A SCOMPARSA: STRUMENTI DI ANALISI GRAFICA
+    with st.expander("✏️ Strumenti di Analisi Grafica", expanded=False):
+        tv_tool = st.radio(
+            "Seleziona strumento:",
+            [
+                "📐 Trendline Diagonale (2 Clic)",
+                "➖ Livello Orizzontale (1 Clic)",
+                "⬜ Rettangolo Zona (2 Clic)",
+                "🌀 Ritracciamento Fibonacci (2 Clic: Min -> Max)",
+                "🎯 Posizione Long/Short R:R (2 Clic: Entry -> Stop Loss)"
+            ],
+            horizontal=True,
+            key="tv_test_tool"
+        )
+
+        tv_rect_extend = False
+        if "Rettangolo" in tv_tool:
+            tv_rect_extend = st.checkbox("➡️ Estendi Rettangolo all'infinito a destra (Zona Supply/Demand)", value=False, key="tv_rect_ext_chk")
+
+    if "tv_shapes_list" not in st.session_state:
+        st.session_state["tv_shapes_list"] = []
+    if "tv_pt_a" not in st.session_state:
+        st.session_state["tv_pt_a"] = None
+    if "tv_last_tool" not in st.session_state:
+        st.session_state["tv_last_tool"] = tv_tool
+
+    if st.session_state["tv_last_tool"] != tv_tool:
+        st.session_state["tv_pt_a"] = None
+        st.session_state["tv_last_tool"] = tv_tool
+    # ==========================================================================
+    # TAB 01: TRADINGVIEW PRO LAB (PARTE 2/4 - CALCOLO & COSTRUZIONE GRAFICO)
+    # ==========================================================================
+    df_tv = yf.download(tickers=tv_ticker, period=tv_per, interval=tv_tf, auto_adjust=False, multi_level_index=False, progress=False)
+
+    if df_tv is None or df_tv.empty:
+        st.error("❌ Impossibile caricare i dati per il ticker/timeframe selezionato.")
+        st.stop()
+
+    df_tv.columns = [str(c).strip() for c in df_tv.columns]
+    close_s = df_tv["Close"].astype(float)
+    high_s = df_tv["High"].astype(float)
+    low_s = df_tv["Low"].astype(float)
+    open_s = df_tv["Open"].astype(float)
+    vol_s = df_tv["Volume"].astype(float)
+
+    if "EMA 20" in tv_ema_scelte:
+        df_tv["EMA20"] = close_s.ewm(span=20, adjust=False).mean()
+    if "EMA 50" in tv_ema_scelte:
+        df_tv["EMA50"] = close_s.ewm(span=50, adjust=False).mean()
+    if "EMA 100" in tv_ema_scelte:
+        df_tv["EMA100"] = close_s.ewm(span=100, adjust=False).mean()
+    if "EMA 200" in tv_ema_scelte:
+        df_tv["EMA200"] = close_s.ewm(span=200, adjust=False).mean()
+
+    if tv_bb:
+        bb_mid = close_s.rolling(20).mean()
+        bb_std = close_s.rolling(20).std()
+        df_tv["BB_UP"] = bb_mid + 2 * bb_std
+        df_tv["BB_LOW"] = bb_mid - 2 * bb_std
+
+    if tv_vwap and vol_s.sum() > 0:
+        tp = (high_s + low_s + close_s) / 3.0
+        df_tv["VWAP"] = (tp * vol_s).cumsum() / vol_s.cumsum().replace(0, np.nan)
+
+    if tv_sub_osc == "RSI (14)":
+        delta = close_s.diff()
+        gain = delta.where(delta > 0, 0).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        df_tv["RSI"] = 100 - (100 / (1 + (gain / loss.replace(0, 1e-5))))
+    elif tv_sub_osc == "MACD (12, 26, 9)":
+        ema12 = close_s.ewm(span=12, adjust=False).mean()
+        ema26 = close_s.ewm(span=26, adjust=False).mean()
+        df_tv["MACD"] = ema12 - ema26
+        df_tv["MACD_SIG"] = df_tv["MACD"].ewm(span=9, adjust=False).mean()
+        df_tv["MACD_HIST"] = df_tv["MACD"] - df_tv["MACD_SIG"]
+    elif tv_sub_osc == "Z-Score (±2)":
+        n_z = min(tv_z_win, max(10, len(close_s) // 2))
+        x_z = np.arange(n_z)
+        sx, sx2 = x_z.sum(), (x_z**2).sum()
+        den_z = n_z * sx2 - (sx**2)
+        sy = close_s.rolling(window=n_z).sum()
+        sy2 = (close_s**2).rolling(window=n_z).sum()
+        xy_c = np.convolve(close_s.values, x_z[::-1], mode="valid")
+        sxy = pd.Series(np.nan, index=close_s.index)
+        sxy.iloc[n_z-1:] = xy_c
+        m_z = (n_z * sxy - sx * sy) / den_z
+        q_z = (sx2 * sy - sx * sxy) / den_z
+        p_teo = m_z * n_z + q_z
+        mx, vx = sx / n_z, sx2 / n_z - ((sx / n_z)**2)
+        my, vy = sy / n_z, sy2 / n_z - ((sy / n_z)**2)
+        cov_z = sxy / n_z - (mx * my)
+        std_res = np.sqrt(np.clip(vy - (2 * m_z * cov_z) + (m_z**2 * vx), 1e-5, None))
+        df_tv["Z_Score"] = ((close_s - p_teo) / std_res).fillna(0.0)
+
+    has_vol = tv_vol and vol_s.sum() > 0
+    has_osc = tv_sub_osc != "Nessuno"
+
+    if has_vol and has_osc:
+        n_rows, r_heights = 3, [0.64, 0.16, 0.20]
+    elif has_vol or has_osc:
+        n_rows, r_heights = 2, [0.75, 0.25]
+    else:
+        n_rows, r_heights = 1, [1.0]
+
+    fig_tv = make_subplots(
+        rows=n_rows, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        row_heights=r_heights
+    )
+
+    fig_tv.add_trace(grp.Candlestick(
+        x=df_tv.index,
+        open=open_s, high=high_s, low=low_s, close=close_s,
+        increasing_line_color="#089981", increasing_fillcolor="#089981",
+        decreasing_line_color="#f23645", decreasing_fillcolor="#f23645",
+        name=tv_ticker,
+        hoverinfo="none"
+    ), row=1, col=1)
+
+    step_tempo = (df_tv.index[-1] - df_tv.index[-2]) if len(df_tv) > 1 else pd.Timedelta(days=1)
+    d_start = df_tv.index.min()
+    d_end = df_tv.index.max()
+    d_future = d_end + (step_tempo * 25)
+
+    p_min_g, p_max_g = float(low_s.min()) * 0.90, float(high_s.max()) * 1.10
+    livelli_y_liberi = np.linspace(p_min_g, p_max_g, 45)
+    date_griglia = list(df_tv.index[::max(1, len(df_tv)//60)]) + [d_end + step_tempo * k for k in range(1, 24, 2)]
+
+    xm, ym = [], []
+    for dt_g in date_griglia:
+        for y_g in livelli_y_liberi:
+            xm.append(dt_g)
+            ym.append(float(y_g))
+
+    fig_tv.add_trace(grp.Scatter(
+        x=xm, y=ym,
+        mode="markers",
+        marker=dict(size=16, opacity=0.01, color="#38bdf8"),
+        showlegend=False,
+        hovertemplate="Data: %{x}<br>Prezzo: <b>%{y:.2f} $</b><extra></extra>"
+    ), row=1, col=1)
+
+    colori_ema = {"EMA20": "#38bdf8", "EMA50": "#f59e0b", "EMA100": "#a855f7", "EMA200": "#ef4444"}
+    for col_e, col_hex in colori_ema.items():
+        if col_e in df_tv.columns:
+            fig_tv.add_trace(grp.Scatter(
+                x=df_tv.index, y=df_tv[col_e], mode="lines",
+                line=dict(color=col_hex, width=1.5), name=col_e
+            ), row=1, col=1)
+
+    if tv_bb and "BB_UP" in df_tv.columns:
+        fig_tv.add_trace(grp.Scatter(x=df_tv.index, y=df_tv["BB_UP"], mode="lines", line=dict(color="rgba(56,189,248,0.4)", width=1), name="BB Upper"), row=1, col=1)
+        fig_tv.add_trace(grp.Scatter(x=df_tv.index, y=df_tv["BB_LOW"], mode="lines", line=dict(color="rgba(56,189,248,0.4)", width=1), fill="tonexty", fillcolor="rgba(56,189,248,0.06)", name="BB Lower"), row=1, col=1)
+
+    if tv_vwap and "VWAP" in df_tv.columns:
+        fig_tv.add_trace(grp.Scatter(x=df_tv.index, y=df_tv["VWAP"], mode="lines", line=dict(color="#eab308", width=1.8, dash="dash"), name="VWAP"), row=1, col=1)
+
+    if tv_swings and len(df_tv) > (tv_swing_order * 2 + 1):
+        sh_raw = argrelextrema(high_s.values, np.greater_equal, order=tv_swing_order)[0]
+        sl_raw = argrelextrema(low_s.values, np.less_equal, order=tv_swing_order)[0]
+        sh_clean = [int(i) for k, i in enumerate(sh_raw) if k == 0 or (i - sh_raw[k - 1]) >= tv_swing_order]
+        sl_clean = [int(i) for k, i in enumerate(sl_raw) if k == 0 or (i - sl_raw[k - 1]) >= tv_swing_order]
+
+        if len(sh_clean) > 0:
+            fig_tv.add_trace(grp.Scatter(
+                x=df_tv.index[sh_clean],
+                y=high_s.iloc[sh_clean] * 1.004,
+                mode="markers+text",
+                marker=dict(color="#ef4444", size=9, symbol="triangle-down"),
+                text=[f"{round(float(v), 2)}" for v in high_s.iloc[sh_clean]],
+                textposition="top center",
+                textfont=dict(color="#ef4444", size=9),
+                name="Swing High"
+            ), row=1, col=1)
+
+        if len(sl_clean) > 0:
+            fig_tv.add_trace(grp.Scatter(
+                x=df_tv.index[sl_clean],
+                y=low_s.iloc[sl_clean] * 0.996,
+                mode="markers+text",
+                marker=dict(color="#22c55e", size=9, symbol="triangle-up"),
+                text=[f"{round(float(v), 2)}" for v in low_s.iloc[sl_clean]],
+                textposition="bottom center",
+                textfont=dict(color="#22c55e", size=9),
+                name="Swing Low"
+            ), row=1, col=1)
+
+
+    if tv_sub_osc == "Z-Score (±2)" and "Z_Score" in df_tv.columns:
+        mask_z_up = df_tv["Z_Score"] >= 2.0
+        mask_z_dn = df_tv["Z_Score"] <= -2.0
+        if mask_z_up.any():
+            fig_tv.add_trace(grp.Scatter(
+                x=df_tv.index[mask_z_up], y=high_s[mask_z_up] * 1.006,
+                mode="markers", marker=dict(color="#22c55e", size=8, symbol="circle", line=dict(color="white", width=1)),
+                name="Z >= +2 (Prezzo)"
+            ), row=1, col=1)
+        if mask_z_dn.any():
+            fig_tv.add_trace(grp.Scatter(
+                x=df_tv.index[mask_z_dn], y=low_s[mask_z_dn] * 0.994,
+                mode="markers", marker=dict(color="#ef4444", size=8, symbol="circle", line=dict(color="white", width=1)),
+                name="Z <= -2 (Prezzo)"
+            ), row=1, col=1)
+
+    if tv_show_vp and len(df_tv) > 10:
+        p1, _, _, _, _ = calc_vp(df_tv, div=100)
+        idx_ath = high_s.idxmax()
+        p2, _, _, _, _ = calc_vp(df_tv.loc[idx_ath:], div=80) if len(df_tv.loc[idx_ath:]) > 5 else (None, None, None, [], [])
+        p3, _, _, _, _ = calc_vp(df_tv.tail(min(120, len(df_tv))), div=80)
+
+        for p_val, p_col, p_lbl, p_dash in [
+            (p1, "#ef4444", "POC Storico", "solid"),
+            (p2, "#3b82f6", "POC ATH", "dash"),
+            (p3, "#10b981", "POC Recente", "dot")
+        ]:
+            if p_val is not None:
+                fig_tv.add_shape(type="line", x0=d_start, x1=d_end, y0=p_val, y1=p_val, line=dict(color=p_col, width=1.8, dash=p_dash), row=1, col=1)
+                fig_tv.add_annotation(x=d_end, y=p_val, text=f"{p_lbl}: {round(p_val, 2)}", showarrow=False, xanchor="right", yshift=10, font=dict(color=p_col, size=10), bgcolor="rgba(15,23,42,0.8)", row=1, col=1)
+    # ==========================================================================
+    # TAB 01: TRADINGVIEW PRO LAB (PARTE 3/4 - DISEGNO FORME & SCATOLA R:R)
+    # ==========================================================================
+    t_fut_s = d_future.timestamp()
+    for shp in st.session_state["tv_shapes_list"]:
+        if shp["ticker"] != tv_ticker:
+            continue
+        st_type = shp["type"]
+        if st_type == "horizontal":
+            fig_tv.add_shape(type="line", x0=shp["x0"], x1=d_future, y0=shp["y0"], y1=shp["y0"], line=dict(color="#06b6d4", width=2.2), row=1, col=1)
+        elif st_type == "trendline":
+            t0_s, t1_s = pd.to_datetime(shp["x0"]).timestamp(), pd.to_datetime(shp["x1"]).timestamp()
+            if t1_s != t0_s:
+                m = (shp["y1"] - shp["y0"]) / (t1_s - t0_s)
+                y_proj = shp["y0"] + m * (t_fut_s - t0_s)
+                fig_tv.add_trace(grp.Scatter(x=[shp["x0"], d_future], y=[shp["y0"], y_proj], mode="lines", line=dict(color="#d946ef", width=2.2), showlegend=False), row=1, col=1)
+        elif st_type == "rect":
+            x_left_r = min(pd.to_datetime(shp["x0"]), pd.to_datetime(shp["x1"]))
+            x_right_r = d_future if shp.get("extend", False) else max(pd.to_datetime(shp["x0"]), pd.to_datetime(shp["x1"]))
+            fig_tv.add_shape(
+                type="rect",
+                x0=x_left_r,
+                x1=x_right_r,
+                y0=min(shp["y0"], shp["y1"]),
+                y1=max(shp["y0"], shp["y1"]),
+                fillcolor="rgba(250, 204, 21, 0.16)",
+                line=dict(color="#facc15", width=1.8),
+                row=1, col=1
+            )
+        elif st_type == "fibo":
+            y_low_f, y_high_f = shp["y0"], shp["y1"]
+            diff_f = y_high_f - y_low_f
+            livelli_fib = [(0.0, "#ef4444"), (0.236, "#f97316"), (0.382, "#eab308"), (0.5, "#22c55e"), (0.618, "#06b6d4"), (0.786, "#3b82f6"), (1.0, "#a855f7")]
+            for lvl, c_fib in livelli_fib:
+                y_lvl = y_high_f - (diff_f * lvl)
+                fig_tv.add_shape(type="line", x0=shp["x0"], x1=d_future, y0=y_lvl, y1=y_lvl, line=dict(color=c_fib, width=1.2, dash="dot"), row=1, col=1)
+                fig_tv.add_annotation(x=shp["x0"], y=y_lvl, text=f"Fib {round(lvl*100, 1)}% ({round(y_lvl, 2)})", showarrow=False, xanchor="left", yshift=7, font=dict(color=c_fib, size=9), row=1, col=1)
+        elif st_type == "rr_tool":
+            entry_p = float(shp["y0"])
+            sl_p = float(shp["y1"])
+            risk_u = entry_p - sl_p
+            tp_p = float(shp.get("tp_custom", entry_p + (risk_u * shp["rr"])))
+            rr_eff = abs(tp_p - entry_p) / abs(risk_u) if abs(risk_u) > 0 else shp["rr"]
+            x_start_box = pd.to_datetime(shp["x0"])
+            x_end_box = max(d_future, x_start_box + (step_tempo * 18))
+
+            fig_tv.add_shape(
+                type="rect", x0=x_start_box, x1=x_end_box,
+                y0=min(entry_p, sl_p), y1=max(entry_p, sl_p),
+                fillcolor="rgba(239, 68, 68, 0.25)", line=dict(color="#ef4444", width=1.5),
+                row=1, col=1
+            )
+            fig_tv.add_shape(
+                type="rect", x0=x_start_box, x1=x_end_box,
+                y0=min(entry_p, tp_p), y1=max(entry_p, tp_p),
+                fillcolor="rgba(34, 197, 94, 0.25)", line=dict(color="#22c55e", width=1.5),
+                row=1, col=1
+            )
+            fig_tv.add_shape(
+                type="line", x0=x_start_box, x1=x_end_box,
+                y0=entry_p, y1=entry_p,
+                line=dict(color="#ffffff", width=1.8, dash="dash"),
+                row=1, col=1
+            )
+            pct_tp = ((tp_p - entry_p) / entry_p) * 100
+            pct_sl = ((sl_p - entry_p) / entry_p) * 100
+            fig_tv.add_annotation(x=x_end_box, y=tp_p, text=f"🎯 TP: {round(tp_p, 2)}$ ({round(pct_tp, 1)}%) | R:R 1:{round(rr_eff, 1)}", showarrow=False, xanchor="right", yshift=10, font=dict(color="#22c55e", size=10, weight="bold"), bgcolor="rgba(15,23,42,0.85)", row=1, col=1)
+            fig_tv.add_annotation(x=x_end_box, y=entry_p, text=f"⚪ ENTRY: {round(entry_p, 2)}$", showarrow=False, xanchor="right", yshift=0, font=dict(color="#ffffff", size=10, weight="bold"), bgcolor="rgba(15,23,42,0.85)", row=1, col=1)
+            fig_tv.add_annotation(x=x_end_box, y=sl_p, text=f"🛑 SL: {round(sl_p, 2)}$ ({round(pct_sl, 1)}%)", showarrow=False, xanchor="right", yshift=-12, font=dict(color="#ef4444", size=10, weight="bold"), bgcolor="rgba(15,23,42,0.85)", row=1, col=1)
+    # ==========================================================================
+    # TAB 01: TRADINGVIEW PRO LAB (PARTE 4/4 - OSCILLATORI, RENDER & CLIC)
+    # ==========================================================================
+    if st.session_state["tv_pt_a"] is not None:
+        pa = st.session_state["tv_pt_a"]
+        fig_tv.add_trace(grp.Scatter(x=[pa["x"]], y=[pa["y"]], mode="markers", marker=dict(color="#facc15", size=14, symbol="cross"), showlegend=False), row=1, col=1)
+
+    curr_row = 2
+    if has_vol:
+        vol_colors = ["#089981" if c >= o else "#f23645" for c, o in zip(close_s, open_s)]
+        fig_tv.add_trace(grp.Bar(x=df_tv.index, y=vol_s, marker_color=vol_colors, opacity=0.5, name="Volume", showlegend=False), row=curr_row, col=1)
+        fig_tv.update_yaxes(title_text="Vol", row=curr_row, col=1)
+        curr_row += 1
+
+    if has_osc:
+        if tv_sub_osc == "RSI (14)":
+            fig_tv.add_trace(grp.Scatter(x=df_tv.index, y=df_tv["RSI"], mode="lines", line=dict(color="#a855f7", width=1.6), name="RSI 14"), row=curr_row, col=1)
+            fig_tv.add_hline(y=70, line_dash="dot", line_color="#ef4444", row=curr_row, col=1)
+            fig_tv.add_hline(y=30, line_dash="dot", line_color="#22c55e", row=curr_row, col=1)
+            fig_tv.update_yaxes(title_text="RSI", range=tuple((0, 100)), row=curr_row, col=1)
+        elif tv_sub_osc == "MACD (12, 26, 9)":
+            hist_cols = ["#089981" if v >= 0 else "#f23645" for v in df_tv["MACD_HIST"].fillna(0)]
+            fig_tv.add_trace(grp.Bar(x=df_tv.index, y=df_tv["MACD_HIST"], marker_color=hist_cols, name="MACD Hist", showlegend=False), row=curr_row, col=1)
+            fig_tv.add_trace(grp.Scatter(x=df_tv.index, y=df_tv["MACD"], mode="lines", line=dict(color="#38bdf8", width=1.5), name="MACD"), row=curr_row, col=1)
+            fig_tv.add_trace(grp.Scatter(x=df_tv.index, y=df_tv["MACD_SIG"], mode="lines", line=dict(color="#f59e0b", width=1.5), name="Signal"), row=curr_row, col=1)
+            fig_tv.update_yaxes(title_text="MACD", row=curr_row, col=1)
+        elif tv_sub_osc == "Z-Score (±2)":
+            z_s = df_tv["Z_Score"]
+            fig_tv.add_trace(grp.Scatter(x=df_tv.index, y=z_s, mode="lines", line=dict(color="#38bdf8", width=1.6), name="Z-Score"), row=curr_row, col=1)
+            fig_tv.add_hline(y=2.0, line_dash="dash", line_color="#22c55e", annotation_text="+2.0", row=curr_row, col=1)
+            fig_tv.add_hline(y=0.0, line_dash="solid", line_color="rgba(255,255,255,0.2)", row=curr_row, col=1)
+            fig_tv.add_hline(y=-2.0, line_dash="dash", line_color="#ef4444", annotation_text="-2.0", row=curr_row, col=1)
+
+            m_up = z_s >= 2.0
+            m_dn = z_s <= -2.0
+            if m_up.any():
+                fig_tv.add_trace(grp.Scatter(
+                    x=df_tv.index[m_up], y=z_s[m_up], mode="markers",
+                    marker=dict(color="#22c55e", size=8, symbol="circle", line=dict(color="white", width=1)),
+                    name="Z >= +2", showlegend=False
+                ), row=curr_row, col=1)
+            if m_dn.any():
+                fig_tv.add_trace(grp.Scatter(
+                    x=df_tv.index[m_dn], y=z_s[m_dn], mode="markers",
+                    marker=dict(color="#ef4444", size=8, symbol="circle", line=dict(color="white", width=1)),
+                    name="Z <= -2", showlegend=False
+                ), row=curr_row, col=1)
+
+            fig_tv.update_yaxes(title_text="Z-Score", range=tuple((-4.5, 4.5)), row=curr_row, col=1)
+
+    fig_tv.update_layout(
+        template="plotly_dark",
+        height=740,
+        margin=dict(l=20, r=20, t=15, b=15),
+        xaxis_rangeslider_visible=False,
+        clickmode="event+select",
+        dragmode="pan",
+        hovermode="closest",
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1)
+    )
+    fig_tv.update_yaxes(type="log" if tv_log_scale else "linear", fixedrange=False, row=1, col=1)
+    fig_tv.update_xaxes(range=tuple((d_start, d_future)), fixedrange=False)
+
+    ev_tv = st.plotly_chart(
+        fig_tv,
+        use_container_width=True,
+        config={"scrollZoom": True},
+        key=f"tv_lab_chart_{tv_ticker}_{tv_tf}_{len(st.session_state['tv_shapes_list'])}_{st.session_state['tv_pt_a'] is not None}",
+        on_select="rerun",
+        selection_mode="points"
+    )
+
+    if ev_tv is not None:
+        sel_tv = ev_tv.get("selection", {}) if isinstance(ev_tv, dict) else getattr(ev_tv, "selection", {})
+        pts_tv = sel_tv.get("points", []) if isinstance(sel_tv, dict) else getattr(sel_tv, "points", [])
+        if len(pts_tv) > 0:
+            pt_click = pts_tv[-1]
+            x_clk = str(pt_click.get("x", ""))
+            y_clk = float(pt_click.get("y", 0.0))
+
+            if x_clk and y_clk > 0:
+                if "Orizzontale" in tv_tool:
+                    st.session_state["tv_shapes_list"].append({"ticker": tv_ticker, "type": "horizontal", "x0": x_clk, "y0": y_clk})
+                    st.rerun()
+                else:
+                    if st.session_state["tv_pt_a"] is None:
+                        st.session_state["tv_pt_a"] = {"x": x_clk, "y": y_clk}
+                        st.rerun()
+                    else:
+                        pa = st.session_state["tv_pt_a"]
+                        is_pos_tool = "Posizione" in tv_tool
+                        if is_pos_tool or x_clk != pa["x"]:
+                            t_map = {
+                                "Trendline": "trendline",
+                                "Rettangolo": "rect",
+                                "Fibonacci": "fibo",
+                                "Posizione": "rr_tool"
+                            }
+                            k_type = next(v for k, v in t_map.items() if k in tv_tool)
+                            st.session_state["tv_shapes_list"].append({
+                                "ticker": tv_ticker, "type": k_type,
+                                "x0": pa["x"], "y0": pa["y"],
+                                "x1": x_clk, "y1": y_clk,
+                                "rr": tv_rr_ratio,
+                                "extend": tv_rect_extend
+                            })
+                            st.session_state["tv_pt_a"] = None
+                            st.rerun()
+
+    if "Posizione" in tv_tool:
+        with st.expander("🎯 Imposta Livelli Esatti Posizione Pendente (Entry / Stop Loss / Take Profit)", expanded=True):
+            p_last_tv = float(close_s.iloc[-1])
+            pc1, pc2, pc3, pc4 = st.columns(4)
+            with pc1:
+                man_entry = st.number_input("Prezzo Entry ($):", value=round(p_last_tv, 2), step=0.10, key="tv_man_entry")
+            with pc2:
+                man_sl = st.number_input("Stop Loss ($):", value=round(p_last_tv * 0.96, 2), step=0.10, key="tv_man_sl")
+            with pc3:
+                tp_default = man_entry + ((man_entry - man_sl) * tv_rr_ratio)
+                man_tp = st.number_input("Take Profit ($):", value=round(tp_default, 2), step=0.10, key="tv_man_tp")
+            with pc4:
+                st.markdown("<div style='padding-top:28px;'></div>", unsafe_allow_html=True)
+                if st.button("➕ Disegna Posizione sul Grafico", type="primary", use_container_width=True):
+                    if man_entry != man_sl:
+                        st.session_state["tv_shapes_list"].append({
+                            "ticker": tv_ticker, "type": "rr_tool",
+                            "x0": str(d_end), "y0": man_entry,
+                            "x1": str(d_future), "y1": man_sl,
+                            "tp_custom": man_tp,
+                            "rr": abs(man_tp - man_entry) / abs(man_entry - man_sl)
+                        })
+                        st.rerun()
+
+    ctrl1, ctrl2, ctrl3 = st.columns(3)
+    with ctrl1:
+        if st.session_state["tv_pt_a"]:
+            st.info(f"📍 Primo punto fissato a **{round(st.session_state['tv_pt_a']['y'], 2)} $** — Clicca il secondo punto.")
+        else:
+            st.caption("💡 Puoi cliccare liberamente ovunque sul grafico (anche nel vuoto o sul lato destro futuro).")
+    with ctrl2:
+        if st.button("↩️ Annulla Ultimo Disegno", use_container_width=True):
+            if st.session_state["tv_pt_a"] is not None:
+                st.session_state["tv_pt_a"] = None
+            elif st.session_state["tv_shapes_list"]:
+                st.session_state["tv_shapes_list"].pop()
+            st.rerun()
+    with ctrl3:
+        if st.button("🗑️ Pulisci Grafico", use_container_width=True):
+            st.session_state["tv_pt_a"] = None
+            st.session_state["tv_shapes_list"] = [s for s in st.session_state["tv_shapes_list"] if s["ticker"] != tv_ticker]
+            st.rerun()
+
