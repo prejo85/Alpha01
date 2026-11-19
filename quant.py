@@ -1,3 +1,8 @@
+import os
+import json
+import base64
+from urllib.parse import quote
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,29 +10,22 @@ import yfinance as yf
 import plotly.graph_objects as grp
 from plotly.subplots import make_subplots
 import requests
-import json
-import matplotlib.pyplot as plt
 from arch import arch_model
 from scipy import stats
-import os
+from scipy.signal import argrelextrema
+from scipy.optimize import minimize
 from dotenv import load_dotenv
-from urllib.parse import quote
 
-
-# Carica le chiavi dal file .env (se presente)
 load_dotenv()
 
 st.set_page_config(layout="wide", page_title="POC Scanner Pro", page_icon="📐")
 
-import base64
-
-# ==============================================================================
-# --- SCHERMATA DI ACCESSO (LOGIN PAGE CON SFONDO PERSONALIZZATO) ---
-# ==============================================================================
 if "autenticato" not in st.session_state:
     st.session_state["autenticato"] = False
 
-# Legge eventuali parametri URL in arrivo da Telegram prima del login
+if "asset_type_index" not in st.session_state:
+    st.session_state["asset_type_index"] = 0
+
 params_init = st.query_params
 if "ticker" in params_init and not st.session_state.get("url_gia_letto", False):
     tk_url = str(params_init["ticker"]).upper().strip()
@@ -37,11 +35,13 @@ if "ticker" in params_init and not st.session_state.get("url_gia_letto", False):
     st.session_state["can_tf"] = tf_url
     st.session_state["url_gia_letto"] = True
 
+
 def _get_base64_bg(percorso_img):
     if os.path.exists(percorso_img):
         with open(percorso_img, "rb") as f:
             return base64.b64encode(f.read()).decode()
     return ""
+
 
 if not st.session_state["autenticato"]:
     bg_b64 = _get_base64_bg("sfondo_login.png")
@@ -53,11 +53,9 @@ if not st.session_state["autenticato"]:
 
     st.markdown(f"""
     <style>
-        /* Nasconde sidebar e header nella pagina di login */
         section[data-testid="stSidebar"] {{ display: none !important; }}
         header[data-testid="stHeader"] {{ background: transparent !important; }}
 
-        /* Sfondo a tutto schermo con l'immagine caricata */
         .stApp {{
             {bg_css}
             background-size: cover !important;
@@ -65,7 +63,6 @@ if not st.session_state["autenticato"]:
             background-attachment: fixed !important;
         }}
 
-        /* Box vetro scuro compatto centrato per il form di login */
         div[data-testid="stForm"] {{
             background: rgba(9, 11, 17, 0.72) !important;
             backdrop-filter: blur(10px) !important;
@@ -102,7 +99,7 @@ if not st.session_state["autenticato"]:
 
     st.markdown("<div style='height: 12vh;'></div>", unsafe_allow_html=True)
 
-    col_sx, col_centro, col_dx = st.columns([1.4, 1.6, 1.4])
+    _, col_centro, _ = st.columns([1.4, 1.6, 1.4])
     with col_centro:
         with st.form("form_login_quant"):
             st.markdown("""
@@ -127,33 +124,16 @@ if not st.session_state["autenticato"]:
                     st.error("❌ Credenziali non valide. Riprova.")
 
     st.stop()
-
-
-# Intercetta i link diretti provenienti dagli alert Telegram
-params = st.query_params
-if "ticker" in params and not st.session_state.get("url_gia_letto", False):
-    tk_url = str(params["ticker"]).upper().strip()
-    tf_url = str(params.get("tf", "Giornaliero (Daily)")).strip()
-    
-    st.session_state["menu_navigazione_moduli"] = "📺 TradingView Interactive Canvas"
-    st.session_state["can_tk"] = tk_url
-    st.session_state["can_tf"] = tf_url
-    st.session_state["url_gia_letto"] = True
-
-# ==============================================================================
-# STILE DARK PREMIUM DA PREVIEW GRAFICA (SIDEBAR COORDINATA)
-# ==============================================================================
 st.markdown("""
 <style>
-    
-    /* Riduce leggermente il font dei valori delle metriche per evitare troncamenti */
+    @import url('https://googleapis.com');
+
     div[data-testid="stMetricValue"] > div {
         font-size: 1.55rem !important;
         white-space: normal !important;
         line-height: 1.2 !important;
     }
 
-    /* Forza il puntatore standard (freccia) su tutti i grafici Plotly */
     .js-plotly-plot .plotly .cursor-crosshair,
     .js-plotly-plot .plotly .cursor-move,
     .js-plotly-plot .plotly .cursor-pointer,
@@ -163,31 +143,26 @@ st.markdown("""
         cursor: default !important;
     }
 
-    @import url('https://googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
-    
-    /* Sfondo principale con gradiente radiale scuro */
     .stApp { 
         background: radial-gradient(circle at top right, #111524 0%, #07080d 100%) !important; 
         font-family: 'Plus Jakarta Sans', sans-serif !important; 
         color: #f1f5f9 !important; 
     }
-    
-    /* Barra Laterale (Sidebar) Hi-Tech */
+
     section[data-testid="stSidebar"] {
         background-color: #090b11 !important;
         border-right: 1px solid rgba(56, 189, 248, 0.08) !important;
     }
-    
-    /* Nasconde il pallino nativo brutto dei radio button di Streamlit */
+
     section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label [data-testid="stWidgetBorder"] {
         display: none !important;
     }
+
     section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] [data-testid="stMarkdownContainer"] p {
         font-size: 14px !important;
         font-weight: 600 !important;
     }
-    
-    /* Trasforma i testi dei radio button in pulsanti rettangolari con icone visibili */
+
     section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
         background: rgba(255, 255, 255, 0.01) !important;
         border: 1px solid rgba(255, 255, 255, 0.03) !important;
@@ -200,16 +175,14 @@ st.markdown("""
         color: #94a3b8 !important;
         cursor: pointer !important;
     }
-    
-    /* Effetto Hover sulle voci del menu laterale */
+
     section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:hover {
         background: rgba(56, 189, 248, 0.04) !important;
         border-color: rgba(56, 189, 248, 0.2) !important;
         color: #38bdf8 !important;
         box-shadow: 0 4px 12px rgba(56, 189, 248, 0.05);
     }
-    
-    /* STATO ATTIVO SELEZIONATO: Pulsante illuminato al neon a sinistra */
+
     section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] [data-checked="true"] {
         background: linear-gradient(90deg, rgba(79, 70, 229, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%) !important;
         border-color: rgba(56, 189, 248, 0.6) !important;
@@ -217,16 +190,14 @@ st.markdown("""
         font-weight: 700 !important;
         box-shadow: inset 3px 0px 0px #38bdf8, 0 4px 20px rgba(56, 189, 248, 0.1);
     }
-    
-    /* Box delle metriche finanziarie stile Frosted Glass */
+
     div[data-testid="stMetric"] { 
         background: rgba(13, 17, 28, 0.7) !important; 
         border: 1px solid rgba(56, 189, 248, 0.1) !important; 
         border-radius: 12px !important; 
         backdrop-filter: blur(12px);
     }
-    
-    /* Bottoni di azione con gradiente lineare */
+
     div.stButton > button:first-child { 
         background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%) !important; 
         color: #ffffff !important; 
@@ -235,8 +206,7 @@ st.markdown("""
         padding: 0.7rem 2.2rem !important; 
         border: none !important;
     }
-    
-    /* Input e selettori a tendina coordinati scuri */
+
     div[data-baseweb="select"], input, textarea { 
         background-color: #0f172a !important; 
         border-color: #334155 !important; 
@@ -244,18 +214,10 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-st.title("📐 Dashboard Quantanalisys")
-
-if "asset_type_index" not in st.session_state:
-    st.session_state.asset_type_index = 0
-# PROTEZIONE: Recupero sicuro dei dati sensibili dall'ambiente
-T_ID = os.getenv("TELEGRAM_CHAT_ID", "2072895073")
+T_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
-# ==============================================================================
-# DATABASE INTERNO DEI PANIERI AZIONARI AGGIORNATO E AMPLIATO
-# ==============================================================================
+
 SP500_FULL = (
     "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,"
     "AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,"
@@ -292,6 +254,7 @@ FTSEMIB_FULL = (
     "HER.MI,INW.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,SGO.MI,SRG.MI,"
     "STLAM.MI,STMPA.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI,BMPS.MI,BPSO.MI,BC.MI,AVIO.MI,IP.MI"
 )
+
 TOTAL1_LEADERS = "BTC-USD,ETH-USD,USDT-USD,USDC-USD"
 TOTAL2_MAJORS = "SOL-USD,BNB-USD,XRP-USD,ADA-USD,TRX-USD,DOT-USD,LINK-USD,AVAX-USD,TON-USD,SHIB-USD,SUI-USD"
 TOTAL3_ALTS = (
@@ -315,41 +278,50 @@ EUROSTOXX_FULL = (
 )
 
 ELENCO_PANIERI = [
-    "S&P 500", 
-    "NASDAQ 100", 
-    "FTSE MIB (FIB)", 
-    "Crypto", 
-    "US Mid-Caps", 
-    "Crypto & AI Stocks", 
+    "S&P 500",
+    "NASDAQ 100",
+    "FTSE MIB (FIB)",
+    "Crypto",
+    "US Mid-Caps",
+    "Crypto & AI Stocks",
     "Euro Stoxx 50"
 ]
+
+PANIERI_MAP = {
+    "S&P 500": SP500_FULL,
+    "NASDAQ 100": NASDAQ_FULL,
+    "FTSE MIB (FIB)": FTSEMIB_FULL,
+    "Crypto": CRYPTO_FULL,
+    "US Mid-Caps": MIDCAP_US,
+    "Crypto & AI Stocks": CRYPTO_STOCKS,
+    "Euro Stoxx 50": EUROSTOXX_FULL
+}
+
+
 def ottieni_paniere(nome_paniere):
-    if nome_paniere == "S&P 500": return SP500_FULL
-    elif nome_paniere == "NASDAQ 100": return NASDAQ_FULL
-    elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
-    elif nome_paniere == "Crypto": return CRYPTO_FULL
-    elif nome_paniere == "US Mid-Caps": return MIDCAP_US
-    elif nome_paniere == "Crypto & AI Stocks": return CRYPTO_STOCKS
-    elif nome_paniere == "Euro Stoxx 50": return EUROSTOXX_FULL
-    return "AAPL,MSFT"
+    return PANIERI_MAP.get(nome_paniere, "AAPL,MSFT")
+
 
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
-    if not BOT_TOKEN:
+    if not BOT_TOKEN or not chat_id:
         return False
-    payload = {"chat_id": int(chat_id), "text": str(testo_messaggio), "parse_mode": "HTML", "disable_web_page_preview": False}
+    payload = {
+        "chat_id": int(chat_id),
+        "text": str(testo_messaggio),
+        "parse_mode": "HTML",
+        "disable_web_page_preview": False
+    }
     try:
-        # PROTEZIONE: URL composto dinamicamente usando la variabile d'ambiente
-        url_pulito = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        url_pulito = f"https://telegram.org{BOT_TOKEN}/sendMessage"
         res = requests.post(url_pulito, data=json.dumps(payload), headers=TESTA_INTERNET, timeout=12)
         return res.status_code == 200
     except Exception:
         return False
-        
-# ==============================================================================
-# STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
-# ==============================================================================
+
+
 with st.sidebar:
-    st.image("logo_fmjp.png", use_container_width=True)
+    if os.path.exists("logo_fmjp.png"):
+        st.image("logo_fmjp.png", use_container_width=True)
     st.markdown("## 📺 Seleziona l'analisi che vuoi approfondire:")
     st.markdown("🤖 **Menu Navigazione Moduli**")
 
@@ -392,15 +364,13 @@ with st.sidebar:
         label_visibility="collapsed",
         key="menu_navigazione_moduli",
     )
-    
+
     st.markdown("---")
     if st.button("🔒 Disconnetti (Logout)", use_container_width=True):
         st.session_state["autenticato"] = False
         st.rerun()
 
-
     st.markdown("---")
     st.caption("Quant Framework Dashboard Pro v3.0 📐")
 
-# Configurazione del Titolo dinamico della pagina principale
 st.title(f"{scelta_modulo}")
