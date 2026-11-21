@@ -1,6 +1,6 @@
 import os
-import json
 import time
+import json
 import requests
 import numpy as np
 import pandas as pd
@@ -8,9 +8,9 @@ import yfinance as yf
 from scipy import stats
 from sklearn.ensemble import RandomForestClassifier
 
-# Configurazione da Secrets di GitHub
-T_ID = os.getenv("TELEGRAM_CHAT_ID", "2072895073")
-BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
+# Configurazione sicura da Secrets di GitHub
+T_ID = (os.getenv("TELEGRAM_CHAT_ID") or "2072895073").strip()
+BOT_TOKEN = (os.getenv("TELEGRAM_TOKEN") or "").strip()
 
 TOTAL1_LEADERS = "BTC-USD,ETH-USD,USDT-USD,USDC-USD"
 TOTAL2_MAJORS = "SOL-USD,BNB-USD,XRP-USD,ADA-USD,TRX-USD,DOT-USD,LINK-USD,AVAX-USD,TON-USD,SHIB-USD,SUI-USD"
@@ -60,16 +60,15 @@ PANIERI_WEEKEND = {
     "CRYPTO_FULL": f"{TOTAL1_LEADERS},{TOTAL2_MAJORS},{TOTAL3_ALTS}",
     "MIDCAP_US": (
         "ONDS,RGTI,AGIO,AIRS,ALG,HUBS,CLX,IREN,RIVN,MARA,JAN,LIFE,MXL,IESC,HALO,TXRH,DKS,WFR,DT,"
-        "SMR,XPO,GFL,FLEX,JBL,AA,MTDR,CHX,OVV,STNG,WBS,DINO,AMR,SF,LANC,PNR,XOM,AAL,X"
+        "SMR,XPO,GFL,FLEX,JBL,AA,MTDR,CHX,OVV,STNG,WBS,DINO,AMR,SF,LANC,PNR,XOM,AAL"
     ),
     "CRYPTO_STOCKS": "COIN,MARA,IREN,CLSK,WULF,MSTR,HUT,CORZ,RIOT,CIFR,BTBT,BOOM",
     "EUROSTOXX": (
-        "ADS.DE,ALV.DE,BAS.DE,BAYN.DE,BMW.DE,DB1.DE,DBK.DE,DPW.DE,DTE.DE,EOAN.DE,IFX.DE,MBG.DE,MUV2.DE,RWE.DE,SAP.DE,SIE.DE,"
-        "AI.PA,AIR.PA,ALO.PA,CS.PA,BNP.PA,CA.PA,DG.PA,EL.PA,ERF.PA,OR.PA,MC.PA,ML.PA,ORAN.PA,RI.PA,RMS.PA,SAN.PA,SGO.PA,"
+        "ADS.DE,ALV.DE,BAS.DE,BAYN.DE,BMW.DE,DB1.DE,DBK.DE,DHL.DE,DTE.DE,EOAN.DE,IFX.DE,MBG.DE,MUV2.DE,RWE.DE,SAP.DE,SIE.DE,"
+        "AI.PA,AIR.PA,ALO.PA,CS.PA,BNP.PA,CA.PA,DG.PA,EL.PA,ERF.PA,OR.PA,MC.PA,ML.PA,ORA.PA,RI.PA,RMS.PA,SAN.PA,SGO.PA,"
         "SU.PA,TTE.PA,VIE.PA,VIV.PA,ASML.AS,ADYEN.AS,INGA.AS,KPN.AS,PRX.AS,BBVA.MC,SAN.MC,ITX.MC,REP.MC,ENI.MI,ISP.MI,UCG.MI"
     )
 }
-
 
 CAPITALE_OPERATIVO = 10000.0
 RISCHIO_PCT = 1.0
@@ -125,7 +124,6 @@ def check_earnings_gap(tk: str) -> tuple[int, str]:
     except Exception:
         pass
     return 999, "N/D"
-
 def stima_prob_ai(df_in: pd.DataFrame, tipo_setup: str, macro_bull: bool) -> float:
     c_s = df_in["Close"].astype(float)
     h_s = df_in["High"].astype(float)
@@ -199,7 +197,6 @@ def esegui_routine_settimanale():
             if not vix_s.empty:
                 vix_now = float(vix_s.iloc[-1])
 
-
     stato_macro_txt = "🟢 RISK-ON (S&P > SMA200)" if macro_bull else "🔴 RISK-OFF (Difensivo)"
     rischio_usd = CAPITALE_OPERATIVO * (RISCHIO_PCT / 100.0)
 
@@ -219,7 +216,7 @@ def esegui_routine_settimanale():
                 if gg_earn <= 12:
                     continue
 
-                df_t = yf.download(tk, period="5y", interval="1d", auto_adjust=False, multi_level_index=False, progress=False, timeout=8)
+                df_t = yf.download(tk, period="5y", interval="1d", auto_adjust=False, multi_level_index=False, threads=False, progress=False, timeout=8)
                 if df_t is None or len(df_t) < 260:
                     continue
 
@@ -230,13 +227,13 @@ def esegui_routine_settimanale():
                 p_now = float(c_s.iloc[-1])
 
                 lr = np.log(c_s / c_s.shift(1)).dropna().values
-                cagr = ((p_now / float(c_s.iloc[0])) ** (252.0 / len(lr)) - 1.0) * 100.0
+                cagr = ((p_now / float(c_s.iloc)) ** (252.0 / len(lr)) - 1.0) * 100.0
                 _, pv_d = stats.ttest_1samp(lr, 0.0)
 
                 lp_126 = np.log(c_s.tail(126).values)
                 lgs = range(10, 40)
                 tau = [max(1e-8, np.std(lp_126[lg:] - lp_126[:-lg])) for lg in lgs]
-                hurst_v = float(np.clip(np.polyfit(np.log(list(lgs)), np.log(tau), 1)[0] * 2.0, 0.05, 0.95))
+                hurst_v = float(np.clip(np.polyfit(np.log(list(lgs)), np.log(tau), 1) * 2.0, 0.05, 0.95))
 
                 sma200_now = float(c_s.rolling(200).mean().iloc[-1])
                 dist_sma_now = ((p_now - sma200_now) / sma200_now) * 100.0
@@ -281,7 +278,7 @@ def esegui_routine_settimanale():
             messaggio.append("   ⚪ <i>Nessun titolo supera i filtri AI/Score questa settimana.</i>\n")
         else:
             for c in top3:
-                tk_clean = c["tk"].replace(".MI", "")
+                tk_clean = c["tk"].replace(".MI", "").replace("-USD", "")
                 messaggio.append(
                     f"{c['setup']} <b>#{tk_clean}</b> (Score: {c['score']}/100 | AI: {c['ai']}%)\n"
                     f"   ▪️ Entry: <code>{c['entry']}</code> | SL: <code>{c['sl']}</code> | TP: <code>{c['tp']}</code>\n"
