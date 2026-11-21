@@ -1,0 +1,30 @@
+name: Routine Settimanale Quantanalisys
+
+on:
+  schedule:
+    - cron: '0 8 * * 6'
+  workflow_dispatch:
+
+jobs:
+  run-weekly-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Scarica codice repository
+        uses: actions/checkout@v4
+
+      - name: Configura Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installa librerie quantitative
+        run: |
+          pip install yfinance pandas numpy scipy scikit-learn requests
+
+      - name: Esegui Routine Settimanale & Invia Telegram
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python routine_settimanale.py
