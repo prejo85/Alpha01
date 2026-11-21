@@ -184,15 +184,21 @@ def stima_prob_ai(df_in: pd.DataFrame, tipo_setup: str, macro_bull: bool) -> flo
 
 
 def esegui_routine_settimanale():
-    df_mac = yf.download(["^GSPC", "^VIX"], period="1y", interval="1d", auto_adjust=True, progress=False)
+    yf.set_tz_cache_location("/tmp/yf_cache")
+    df_mac = yf.download(["^GSPC", "^VIX"], period="1y", interval="1d", auto_adjust=True, threads=False, progress=False)
     macro_bull, vix_now = True, 18.0
     if df_mac is not None and not df_mac.empty and isinstance(df_mac.columns, pd.MultiIndex):
-        c_mac = df_mac["Close"].dropna()
-        if "^GSPC" in c_mac.columns and len(c_mac["^GSPC"]) >= 200:
-            spx_now = float(c_mac["^GSPC"].iloc[-1])
-            macro_bull = spx_now >= float(c_mac["^GSPC"].rolling(200).mean().iloc[-1])
+        c_mac = df_mac["Close"]
+        if "^GSPC" in c_mac.columns:
+            spx_s = c_mac["^GSPC"].dropna()
+            if len(spx_s) >= 200:
+                spx_now = float(spx_s.iloc[-1])
+                macro_bull = spx_now >= float(spx_s.rolling(200).mean().iloc[-1])
         if "^VIX" in c_mac.columns:
-            vix_now = float(c_mac["^VIX"].iloc[-1])
+            vix_s = c_mac["^VIX"].dropna()
+            if not vix_s.empty:
+                vix_now = float(vix_s.iloc[-1])
+
 
     stato_macro_txt = "🟢 RISK-ON (S&P > SMA200)" if macro_bull else "🔴 RISK-OFF (Difensivo)"
     rischio_usd = CAPITALE_OPERATIVO * (RISCHIO_PCT / 100.0)
