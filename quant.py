@@ -441,7 +441,7 @@ if scelta_modulo in descrizioni_moduli:
 # ==============================================================================
 # TAB 01: TRADINGVIEW PRO LAB QUANTITATIVO (PARTE 1/4 - CONTROLLI & CONTESTO)
 # ==============================================================================
-if scelta_modulo == "🧪 TradingView Pro Lab (Test)":
+if scelta_modulo == "🧪 TradingView Pro":
 
     st.subheader("🧪 TradingView Pro Lab — Workstation Grafica Quantitativa")
 
