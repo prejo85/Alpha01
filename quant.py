@@ -441,11 +441,11 @@ if scelta_modulo in descrizioni_moduli:
     """, unsafe_allow_html=True)
     
 # ==============================================================================
-# TAB 19: TRADINGVIEW PRO LAB QUANTITATIVO (PARTE 1/4 - CONTROLLI & CONTESTO)
+# TAB 19: TRADINGVIEW PRO QUANTITATIVO (PARTE 1/5 - CONTROLLI & STRUMENTI)
 # ==============================================================================
 if scelta_modulo == "🧪 TradingView Pro":
 
-    st.subheader("🧪 TradingView Pro Lab — Workstation Grafica Quantitativa")
+    st.subheader("🧪 TradingView Pro — Workstation Grafica & Alert Prezzo/Tempo")
 
     # 1. BARRA SUPERIORE (TICKER, TIMEFRAME, STORICO E RISK MANAGEMENT)
     tv_c1, tv_c2, tv_c3, tv_c4, tv_c5 = st.columns([1.1, 1.2, 1.1, 1.0, 0.9])
@@ -515,13 +515,14 @@ if scelta_modulo == "🧪 TradingView Pro":
                 tv_z_win = st.slider("Finestra Z-Score (Candele):", min_value=20, max_value=100, value=50, step=5, key="tv_z_win_sl")
             tv_rr_ratio = st.selectbox("Rapporto R:R Default:", [1.5, 2.0, 2.5, 3.0, 4.0], index=2, key="tv_test_rr_mult")
 
-    # 3. MENU A SCOMPARSA: STRUMENTI DI ANALISI GRAFICA
-    with st.expander("✏️ Strumenti di Analisi Grafica & Disegno", expanded=True):
+    # 3. MENU A SCOMPARSA: STRUMENTI DI ANALISI GRAFICA (PREZZO & TEMPO)
+    with st.expander("✏️ Strumenti di Disegno (Prezzo & Alert Temporali)", expanded=True):
         tv_tool = st.radio(
             "Seleziona strumento:",
             [
                 "📐 Trendline Diagonale (2 Clic)",
-                "➖ Livello Orizzontale (1 Clic)",
+                "➖ Livello Orizzontale Prezzo (1 Clic)",
+                "⏳ Linea Verticale Temporale (1 Clic sulla Data)",
                 "⬜ Rettangolo Zona (2 Clic)",
                 "🌀 Ritracciamento Fibonacci (2 Clic: Min -> Max)",
                 "🎯 Posizione Long/Short R:R + Size (2 Clic: Entry -> Stop Loss)"
@@ -545,7 +546,7 @@ if scelta_modulo == "🧪 TradingView Pro":
         st.session_state["tv_pt_a"] = None
         st.session_state["tv_last_tool"] = tv_tool
     # ==========================================================================
-    # TAB 19: PARTE 2/4 - DOWNLOAD, CONTEXT METRICS (HURST, ATR, RVOL, EARNINGS)
+    # TAB 19: PARTE 2/5 - DOWNLOAD, CONTEXT METRICS & OSCILLATORI
     # ==========================================================================
     df_tv = yf.download(tickers=tv_ticker, period=tv_per, interval=tv_tf, auto_adjust=False, multi_level_index=False, progress=False)
 
@@ -576,7 +577,7 @@ if scelta_modulo == "🧪 TradingView Pro":
     v_sma_last_tv = float(vol_sma20_tv.to_numpy()[-1]) if len(vol_sma20_tv) >= 20 else 0.0
     rvol_now_tv = (v_last_tv / v_sma_last_tv) if (v_sma_last_tv > 0 and not np.isnan(v_sma_last_tv)) else 1.0
 
-    # Calcolo Esponente di Hurst sulla finestra disponibile
+    # Calcolo Esponente di Hurst
     log_c_tv = np.log(close_s.dropna().to_numpy())
     if len(log_c_tv) >= 50:
         sub_h = log_c_tv[-min(126, len(log_c_tv)):]
@@ -584,7 +585,7 @@ if scelta_modulo == "🧪 TradingView Pro":
         tau_tv = [max(1e-8, float(np.std(sub_h[lg:] - sub_h[:-lg]))) for lg in lags_tv]
         if len(tau_tv) >= 5:
             poly_h_tv = np.polyfit(np.log(list(lags_tv)), np.log(tau_tv), 1)
-            hurst_tv = float(np.clip(float(poly_h_tv[0]) * 2.0, 0.05, 0.95))
+            hurst_tv = float(np.clip(float(poly_h_tv) * 2.0, 0.05, 0.95))
         else:
             hurst_tv = 0.50
     else:
@@ -597,7 +598,7 @@ if scelta_modulo == "🧪 TradingView Pro":
     else:
         regime_tv_lbl = "🎲 Random Walk"
 
-    # Controllo Calendario Earnings (solo per azioni)
+    # Controllo Calendario Earnings
     earn_lbl_tv = "⚪ N/A"
     earn_delta_tv = "Asset non azionario"
     if not any(x in tv_ticker for x in ["-USD", "=F", "=X", "^"]):
@@ -634,7 +635,7 @@ if scelta_modulo == "🧪 TradingView Pro":
     with q_k4:
         st.metric("📅 Prossimi Earnings", earn_lbl_tv, earn_delta_tv)
 
-    # Calcolo Indicatori Overlay
+    # Indicatori Overlay
     if "EMA 20" in tv_ema_scelte:
         df_tv["EMA20"] = close_s.ewm(span=20, adjust=False).mean()
     if "EMA 50" in tv_ema_scelte:
@@ -654,7 +655,7 @@ if scelta_modulo == "🧪 TradingView Pro":
         tp = (high_s + low_s + close_s) / 3.0
         df_tv["VWAP"] = (tp * vol_s).cumsum() / vol_s.cumsum().replace(0, np.nan)
 
-    # Calcolo Oscillatori Inferiori
+    # Oscillatori Inferiori
     if tv_sub_osc == "RSI (14)":
         delta = close_s.diff()
         gain = delta.where(delta > 0, 0).rolling(14).mean()
@@ -690,14 +691,13 @@ if scelta_modulo == "🧪 TradingView Pro":
             df_b_rs.columns = [str(c).strip() for c in df_b_rs.columns]
             b_close = df_b_rs["Close"].astype(float).reindex(df_tv.index).ffill().bfill()
             rs_raw = (close_s / b_close.replace(0, np.nan)).ffill().bfill()
-            primo_val = float(rs_raw.to_numpy()[0]) if len(rs_raw) > 0 else 1.0
+            primo_val = float(rs_raw.to_numpy()) if len(rs_raw) > 0 else 1.0
             rs_norm = (rs_raw / primo_val) * 100.0 if primo_val > 0 else rs_raw
             df_tv["RS_Line"] = rs_norm
             df_tv["RS_EMA20"] = rs_norm.ewm(span=20, adjust=False).mean()
         else:
             df_tv["RS_Line"] = 100.0
             df_tv["RS_EMA20"] = 100.0
-
     # ==========================================================================
     # TAB 19: PARTE 3A - STRUTTURA GRAFICO, CANDELE & INDICATORI OVERLAY
     # ==========================================================================
@@ -723,11 +723,11 @@ if scelta_modulo == "🧪 TradingView Pro":
     step_tempo = (df_tv.index[-1] - df_tv.index[-2]) if len(df_tv) > 1 else pd.Timedelta(days=1)
     d_start = df_tv.index.min()
     d_end = df_tv.index.max()
-    d_future = d_end + (step_tempo * 25)
+    d_future = d_end + (step_tempo * 30)
 
     p_min_g, p_max_g = float(low_s.min()) * 0.90, float(high_s.max()) * 1.10
     livelli_y_liberi = np.linspace(p_min_g, p_max_g, 45)
-    date_griglia = list(df_tv.index[::max(1, len(df_tv) // 60)]) + [d_end + step_tempo * k for k in range(1, 24, 2)]
+    date_griglia = list(df_tv.index[::max(1, len(df_tv) // 60)]) + [d_end + step_tempo * k for k in range(1, 29, 1)]
 
     xm, ym = [], []
     for dt_g in date_griglia:
@@ -739,7 +739,7 @@ if scelta_modulo == "🧪 TradingView Pro":
         x=xm, y=ym, mode="markers",
         marker=dict(size=16, opacity=0.01, color="#38bdf8"),
         showlegend=False,
-        hovertemplate="Data: %{x}<br>Prezzo: <b>%{y:.2f} $</b><extra></extra>"
+        hovertemplate="Data: %{x|%Y-%m-%d}<br>Prezzo: <b>%{y:.2f} $</b><extra></extra>"
     ), row=1, col=1)
 
     colori_ema = {"EMA20": "#38bdf8", "EMA50": "#f59e0b", "EMA100": "#a855f7", "EMA200": "#ef4444"}
@@ -755,34 +755,15 @@ if scelta_modulo == "🧪 TradingView Pro":
         fig_tv.add_trace(grp.Scatter(x=df_tv.index, y=df_tv["VWAP"], mode="lines", line=dict(color="#eab308", width=1.8, dash="dash"), name="VWAP"), row=1, col=1)
 
     if tv_swings and len(df_tv) > (tv_swing_order * 2 + 1):
-        sh_raw = argrelextrema(high_s.values, np.greater_equal, order=tv_swing_order)
-        sl_raw = argrelextrema(low_s.values, np.less_equal, order=tv_swing_order)
+        sh_raw = argrelextrema(high_s.values, np.greater_equal, order=tv_swing_order)[0]
+        sl_raw = argrelextrema(low_s.values, np.less_equal, order=tv_swing_order)[0]
         sh_clean = [int(i) for k, i in enumerate(sh_raw) if k == 0 or (i - sh_raw[k - 1]) >= tv_swing_order]
         sl_clean = [int(i) for k, i in enumerate(sl_raw) if k == 0 or (i - sl_raw[k - 1]) >= tv_swing_order]
 
         if len(sh_clean) > 0:
-            fig_tv.add_trace(grp.Scatter(
-                x=df_tv.index[sh_clean], y=high_s.iloc[sh_clean] * 1.004,
-                mode="markers+text", marker=dict(color="#ef4444", size=9, symbol="triangle-down"),
-                text=[f"{round(float(v), 2)}" for v in high_s.iloc[sh_clean]],
-                textposition="top center", textfont=dict(color="#ef4444", size=9), name="Swing High"
-            ), row=1, col=1)
-
+            fig_tv.add_trace(grp.Scatter(x=df_tv.index[sh_clean], y=high_s.iloc[sh_clean] * 1.004, mode="markers+text", marker=dict(color="#ef4444", size=9, symbol="triangle-down"), text=[f"{round(float(v), 2)}" for v in high_s.iloc[sh_clean]], textposition="top center", textfont=dict(color="#ef4444", size=9), name="Swing High"), row=1, col=1)
         if len(sl_clean) > 0:
-            fig_tv.add_trace(grp.Scatter(
-                x=df_tv.index[sl_clean], y=low_s.iloc[sl_clean] * 0.996,
-                mode="markers+text", marker=dict(color="#22c55e", size=9, symbol="triangle-up"),
-                text=[f"{round(float(v), 2)}" for v in low_s.iloc[sl_clean]],
-                textposition="bottom center", textfont=dict(color="#22c55e", size=9), name="Swing Low"
-            ), row=1, col=1)
-
-    if tv_sub_osc == "Z-Score (±2)" and "Z_Score" in df_tv.columns:
-        mask_z_up = df_tv["Z_Score"] >= 2.0
-        mask_z_dn = df_tv["Z_Score"] <= -2.0
-        if mask_z_up.any():
-            fig_tv.add_trace(grp.Scatter(x=df_tv.index[mask_z_up], y=high_s[mask_z_up] * 1.006, mode="markers", marker=dict(color="#22c55e", size=8, symbol="circle", line=dict(color="white", width=1)), name="Z >= +2 (Prezzo)"), row=1, col=1)
-        if mask_z_dn.any():
-            fig_tv.add_trace(grp.Scatter(x=df_tv.index[mask_z_dn], y=low_s[mask_z_dn] * 0.994, mode="markers", marker=dict(color="#ef4444", size=8, symbol="circle", line=dict(color="white", width=1)), name="Z <= -2 (Prezzo)"), row=1, col=1)
+            fig_tv.add_trace(grp.Scatter(x=df_tv.index[sl_clean], y=low_s.iloc[sl_clean] * 0.996, mode="markers+text", marker=dict(color="#22c55e", size=9, symbol="triangle-up"), text=[f"{round(float(v), 2)}" for v in low_s.iloc[sl_clean]], textposition="bottom center", textfont=dict(color="#22c55e", size=9), name="Swing Low"), row=1, col=1)
 
     if tv_show_vp and len(df_tv) > 10:
         p1, _, _, _, _ = calc_vp(df_tv, div=100)
@@ -790,21 +771,13 @@ if scelta_modulo == "🧪 TradingView Pro":
         p2, _, _, _, _ = calc_vp(df_tv.loc[idx_ath:], div=80) if len(df_tv.loc[idx_ath:]) > 5 else (None, None, None, [], [])
         p3, _, _, _, _ = calc_vp(df_tv.tail(min(120, len(df_tv))), div=80)
 
-        for p_val, p_col, p_lbl, p_dash in [
-            (p1, "#ef4444", "POC Storico", "solid"),
-            (p2, "#3b82f6", "POC ATH", "dash"),
-            (p3, "#10b981", "POC Recente", "dot")
-        ]:
+        for p_val, p_col, p_lbl, p_dash in [(p1, "#ef4444", "POC Storico", "solid"), (p2, "#3b82f6", "POC ATH", "dash"), (p3, "#10b981", "POC Recente", "dot")]:
             if p_val is not None:
                 fig_tv.add_shape(type="line", x0=d_start, x1=d_end, y0=p_val, y1=p_val, line=dict(color=p_col, width=1.8, dash=p_dash), row=1, col=1)
                 fig_tv.add_annotation(x=d_end, y=p_val, text=f"{p_lbl}: {round(p_val, 2)}", showarrow=False, xanchor="right", yshift=10, font=dict(color=p_col, size=10), bgcolor="rgba(15,23,42,0.8)", row=1, col=1)
     # ==========================================================================
-    # TAB 19: PARTE 3B - DISEGNO FORME & SCATOLA R:R CON SIZING AUTOMATICO
+    # TAB 19: PARTE 3B - LIVELLI HTF & ALERT GIÀ ARMATI SUL CLOUD
     # ==========================================================================
-    t_fut_s = d_future.timestamp()
-    rischio_usd_tv = float(tv_capitale) * (float(tv_rischio_pct) / 100.0)
-
-    # --- LIVELLI ISTITUZIONALI MULTI-TIMEFRAME (PREV. WEEK & PREV. MONTH) ---
     if tv_show_htf and tv_tf in ["15m", "1h", "4h", "1d"]:
         try:
             df_htf = yf.download(tickers=tv_ticker, period="6mo", interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
@@ -812,26 +785,21 @@ if scelta_modulo == "🧪 TradingView Pro":
                 df_htf.columns = [str(c).strip() for c in df_htf.columns]
                 df_w_htf = df_htf.resample("W-FRI").agg({"High": "max", "Low": "min"}).dropna()
                 df_m_htf = df_htf.resample("ME").agg({"High": "max", "Low": "min"}).dropna()
-
                 if len(df_w_htf) >= 2:
-                    pwh = float(df_w_htf["High"].iloc[-2])
-                    pwl = float(df_w_htf["Low"].iloc[-2])
+                    pwh, pwl = float(df_w_htf["High"].iloc[-2]), float(df_w_htf["Low"].iloc[-2])
                     fig_tv.add_shape(type="line", x0=d_start, x1=d_future, y0=pwh, y1=pwh, line=dict(color="rgba(56, 189, 248, 0.55)", width=1.3, dash="dashdot"), row=1, col=1)
-                    fig_tv.add_annotation(x=d_start, y=pwh, text=f"PWH (Max Sett. Prec.): {pwh:.2f}", showarrow=False, xanchor="left", yshift=8, font=dict(color="#38bdf8", size=9), row=1, col=1)
+                    fig_tv.add_annotation(x=d_start, y=pwh, text=f"PWH: {pwh:.2f}", showarrow=False, xanchor="left", yshift=8, font=dict(color="#38bdf8", size=9), row=1, col=1)
                     fig_tv.add_shape(type="line", x0=d_start, x1=d_future, y0=pwl, y1=pwl, line=dict(color="rgba(56, 189, 248, 0.55)", width=1.3, dash="dashdot"), row=1, col=1)
-                    fig_tv.add_annotation(x=d_start, y=pwl, text=f"PWL (Min Sett. Prec.): {pwl:.2f}", showarrow=False, xanchor="left", yshift=-10, font=dict(color="#38bdf8", size=9), row=1, col=1)
-
+                    fig_tv.add_annotation(x=d_start, y=pwl, text=f"PWL: {pwl:.2f}", showarrow=False, xanchor="left", yshift=-10, font=dict(color="#38bdf8", size=9), row=1, col=1)
                 if len(df_m_htf) >= 2:
-                    pmh = float(df_m_htf["High"].iloc[-2])
-                    pml = float(df_m_htf["Low"].iloc[-2])
+                    pmh, pml = float(df_m_htf["High"].iloc[-2]), float(df_m_htf["Low"].iloc[-2])
                     fig_tv.add_shape(type="line", x0=d_start, x1=d_future, y0=pmh, y1=pmh, line=dict(color="rgba(245, 158, 11, 0.65)", width=1.5, dash="longdash"), row=1, col=1)
-                    fig_tv.add_annotation(x=d_start, y=pmh, text=f"PMH (Max Mese Prec.): {pmh:.2f}", showarrow=False, xanchor="left", yshift=8, font=dict(color="#f59e0b", size=9), row=1, col=1)
+                    fig_tv.add_annotation(x=d_start, y=pmh, text=f"PMH: {pmh:.2f}", showarrow=False, xanchor="left", yshift=8, font=dict(color="#f59e0b", size=9), row=1, col=1)
                     fig_tv.add_shape(type="line", x0=d_start, x1=d_future, y0=pml, y1=pml, line=dict(color="rgba(245, 158, 11, 0.65)", width=1.5, dash="longdash"), row=1, col=1)
-                    fig_tv.add_annotation(x=d_start, y=pml, text=f"PML (Min Mese Prec.): {pml:.2f}", showarrow=False, xanchor="left", yshift=-10, font=dict(color="#f59e0b", size=9), row=1, col=1)
+                    fig_tv.add_annotation(x=d_start, y=pml, text=f"PML: {pml:.2f}", showarrow=False, xanchor="left", yshift=-10, font=dict(color="#f59e0b", size=9), row=1, col=1)
         except Exception:
             pass
 
-    # --- CARICAMENTO VISIVO ALERT GIÀ ARMATI IN alerts_geometrici_v2.json ---
     FILE_GEO_TV_VIEW = "alerts_geometrici_v2.json"
     db_geo_view = {}
     if os.path.exists(FILE_GEO_TV_VIEW):
@@ -843,30 +811,40 @@ if scelta_modulo == "🧪 TradingView Pro":
         except Exception:
             db_geo_view = {}
 
+    t_fut_s = d_future.timestamp()
+    rischio_usd_tv = float(tv_capitale) * (float(tv_rischio_pct) / 100.0)
+
     for k_gv, cfg_gv in db_geo_view.items():
-        if cfg_gv and cfg_gv.get("Ticker") == tv_ticker and cfg_gv.get("Timeframe") == tv_tf:
+        if cfg_gv and cfg_gv.get("Ticker") == tv_ticker:
             tg_v = cfg_gv.get("Tipo_Geometria")
-            if tg_v == "horizontal":
+            if tg_v == "vertical":
+                xv_str = str(cfg_gv["x0"])[:10]
+                fig_tv.add_shape(type="line", x0=cfg_gv["x0"], x1=cfg_gv["x0"], y0=p_min_g, y1=p_max_g, line=dict(color="#a855f7", width=2.2, dash="dashdot"), row=1, col=1)
+                fig_tv.add_annotation(x=cfg_gv["x0"], y=float(high_s.max()), text=f"⏳ TIME ALERT: {xv_str}", showarrow=False, xanchor="left", yshift=14, font=dict(color="#e9d5ff", size=9, weight="bold"), bgcolor="rgba(88, 28, 135, 0.85)", row=1, col=1)
+            elif cfg_gv.get("Timeframe") == tv_tf and tg_v == "horizontal":
                 yv = float(cfg_gv["y0"])
-                fig_tv.add_shape(type="line", x0=d_start, x1=d_future, y0=yv, y1=yv, line=dict(color="#22c55e", width=2.0, dash="solid"), row=1, col=1)
-                fig_tv.add_annotation(x=d_future, y=yv, text=f"🔔 ALERT ATTIVO: {yv:.2f}$", showarrow=False, xanchor="right", yshift=9, font=dict(color="#22c55e", size=9, weight="bold"), bgcolor="rgba(15,23,42,0.85)", row=1, col=1)
-            elif tg_v == "line":
+                fig_tv.add_shape(type="line", x0=d_start, x1=d_future, y0=yv, y1=yv, line=dict(color="#22c55e", width=2.0), row=1, col=1)
+                fig_tv.add_annotation(x=d_future, y=yv, text=f"🔔 ALERT: {yv:.2f}$", showarrow=False, xanchor="right", yshift=9, font=dict(color="#22c55e", size=9, weight="bold"), bgcolor="rgba(15,23,42,0.85)", row=1, col=1)
+            elif cfg_gv.get("Timeframe") == tv_tf and tg_v == "line":
                 try:
-                    t0_v = pd.to_datetime(cfg_gv["x0"]).timestamp()
-                    t1_v = pd.to_datetime(cfg_gv["x1"]).timestamp()
+                    t0_v, t1_v = pd.to_datetime(cfg_gv["x0"]).timestamp(), pd.to_datetime(cfg_gv["x1"]).timestamp()
                     if t1_v != t0_v:
                         m_v = (float(cfg_gv["y1"]) - float(cfg_gv["y0"])) / (t1_v - t0_v)
                         y_f_v = float(cfg_gv["y0"]) + m_v * (t_fut_s - t0_v)
                         fig_tv.add_trace(grp.Scatter(x=[cfg_gv["x0"], d_future], y=[float(cfg_gv["y0"]), y_f_v], mode="lines", line=dict(color="#22c55e", width=2.2), showlegend=False), row=1, col=1)
                 except Exception:
                     pass
-
-
+    # ==========================================================================
+    # TAB 19: PARTE 3C - DISEGNO NUOVE FORME IN BOZZA & SCATOLA R:R CON SIZE
+    # ==========================================================================
     for shp in st.session_state["tv_shapes_list"]:
         if shp["ticker"] != tv_ticker:
             continue
         st_type = shp["type"]
-        if st_type == "horizontal":
+        if st_type == "vertical":
+            fig_tv.add_shape(type="line", x0=shp["x0"], x1=shp["x0"], y0=p_min_g, y1=p_max_g, line=dict(color="#c084fc", width=2.4, dash="dash"), row=1, col=1)
+            fig_tv.add_annotation(x=shp["x0"], y=float(high_s.max()), text=f"⏳ {str(shp['x0'])[:10]}", showarrow=False, xanchor="left", yshift=12, font=dict(color="#c084fc", size=10, weight="bold"), bgcolor="rgba(15,23,42,0.85)", row=1, col=1)
+        elif st_type == "horizontal":
             fig_tv.add_shape(type="line", x0=shp["x0"], x1=d_future, y0=shp["y0"], y1=shp["y0"], line=dict(color="#06b6d4", width=2.2), row=1, col=1)
         elif st_type == "trendline":
             t0_s, t1_s = pd.to_datetime(shp["x0"]).timestamp(), pd.to_datetime(shp["x1"]).timestamp()
@@ -877,22 +855,16 @@ if scelta_modulo == "🧪 TradingView Pro":
         elif st_type == "rect":
             x_left_r = min(pd.to_datetime(shp["x0"]), pd.to_datetime(shp["x1"]))
             x_right_r = d_future if shp.get("extend", False) else max(pd.to_datetime(shp["x0"]), pd.to_datetime(shp["x1"]))
-            fig_tv.add_shape(
-                type="rect", x0=x_left_r, x1=x_right_r,
-                y0=min(shp["y0"], shp["y1"]), y1=max(shp["y0"], shp["y1"]),
-                fillcolor="rgba(250, 204, 21, 0.16)", line=dict(color="#facc15", width=1.8), row=1, col=1
-            )
+            fig_tv.add_shape(type="rect", x0=x_left_r, x1=x_right_r, y0=min(shp["y0"], shp["y1"]), y1=max(shp["y0"], shp["y1"]), fillcolor="rgba(250, 204, 21, 0.16)", line=dict(color="#facc15", width=1.8), row=1, col=1)
         elif st_type == "fibo":
             y_low_f, y_high_f = shp["y0"], shp["y1"]
             diff_f = y_high_f - y_low_f
-            livelli_fib = [(0.0, "#ef4444"), (0.236, "#f97316"), (0.382, "#eab308"), (0.5, "#22c55e"), (0.618, "#06b6d4"), (0.786, "#3b82f6"), (1.0, "#a855f7")]
-            for lvl, c_fib in livelli_fib:
+            for lvl, c_fib in [(0.0, "#ef4444"), (0.236, "#f97316"), (0.382, "#eab308"), (0.5, "#22c55e"), (0.618, "#06b6d4"), (0.786, "#3b82f6"), (1.0, "#a855f7")]:
                 y_lvl = y_high_f - (diff_f * lvl)
                 fig_tv.add_shape(type="line", x0=shp["x0"], x1=d_future, y0=y_lvl, y1=y_lvl, line=dict(color=c_fib, width=1.2, dash="dot"), row=1, col=1)
                 fig_tv.add_annotation(x=shp["x0"], y=y_lvl, text=f"Fib {round(lvl*100, 1)}% ({round(y_lvl, 2)})", showarrow=False, xanchor="left", yshift=7, font=dict(color=c_fib, size=9), row=1, col=1)
         elif st_type == "rr_tool":
-            entry_p = float(shp["y0"])
-            sl_p = float(shp["y1"])
+            entry_p, sl_p = float(shp["y0"]), float(shp["y1"])
             risk_u = entry_p - sl_p
             tp_p = float(shp.get("tp_custom", entry_p + (risk_u * shp["rr"])))
             abs_risk = abs(risk_u)
@@ -900,7 +872,6 @@ if scelta_modulo == "🧪 TradingView Pro":
             pezzi_rr = (rischio_usd_tv / abs_risk) if abs_risk > 0 else 0.0
             nozionale_rr = pezzi_rr * entry_p
             atr_mult_sl = abs_risk / atr_now_tv if atr_now_tv > 0 else 0.0
-
             x_start_box = pd.to_datetime(shp["x0"])
             x_end_box = max(d_future, x_start_box + (step_tempo * 18))
 
@@ -908,8 +879,7 @@ if scelta_modulo == "🧪 TradingView Pro":
             fig_tv.add_shape(type="rect", x0=x_start_box, x1=x_end_box, y0=min(entry_p, tp_p), y1=max(entry_p, tp_p), fillcolor="rgba(34, 197, 94, 0.25)", line=dict(color="#22c55e", width=1.5), row=1, col=1)
             fig_tv.add_shape(type="line", x0=x_start_box, x1=x_end_box, y0=entry_p, y1=entry_p, line=dict(color="#ffffff", width=1.8, dash="dash"), row=1, col=1)
 
-            pct_tp = ((tp_p - entry_p) / entry_p) * 100
-            pct_sl = ((sl_p - entry_p) / entry_p) * 100
+            pct_tp, pct_sl = ((tp_p - entry_p) / entry_p) * 100, ((sl_p - entry_p) / entry_p) * 100
             fig_tv.add_annotation(x=x_end_box, y=tp_p, text=f"🎯 TP: {round(tp_p, 2)}$ ({round(pct_tp, 1)}%) | R:R 1:{round(rr_eff, 1)}", showarrow=False, xanchor="right", yshift=10, font=dict(color="#22c55e", size=10, weight="bold"), bgcolor="rgba(15,23,42,0.88)", row=1, col=1)
             fig_tv.add_annotation(x=x_end_box, y=entry_p, text=f"⚪ ENTRY: {round(entry_p, 2)}$ | SIZE: {round(pezzi_rr, 2)} Pz (${round(nozionale_rr, 0)})", showarrow=False, xanchor="right", yshift=0, font=dict(color="#38bdf8", size=10, weight="bold"), bgcolor="rgba(15,23,42,0.92)", row=1, col=1)
             fig_tv.add_annotation(x=x_end_box, y=sl_p, text=f"🛑 SL: {round(sl_p, 2)}$ ({round(pct_sl, 1)}% | {round(atr_mult_sl, 1)}x ATR)", showarrow=False, xanchor="right", yshift=-12, font=dict(color="#ef4444", size=10, weight="bold"), bgcolor="rgba(15,23,42,0.88)", row=1, col=1)
@@ -918,7 +888,7 @@ if scelta_modulo == "🧪 TradingView Pro":
         pa = st.session_state["tv_pt_a"]
         fig_tv.add_trace(grp.Scatter(x=[pa["x"]], y=[pa["y"]], mode="markers", marker=dict(color="#facc15", size=14, symbol="cross"), showlegend=False), row=1, col=1)
     # ==========================================================================
-    # TAB 19: PARTE 3C - VOLUMI, OSCILLATORI, LAYOUT & GESTIONE CLIC
+    # TAB 19: PARTE 4/5 - OSCILLATORI, RENDER & GESTIONE CLIC PREZZO/TEMPO
     # ==========================================================================
     curr_row = 2
     if has_vol:
@@ -978,6 +948,9 @@ if scelta_modulo == "🧪 TradingView Pro":
                 if "Orizzontale" in tv_tool:
                     st.session_state["tv_shapes_list"].append({"ticker": tv_ticker, "type": "horizontal", "x0": x_clk, "y0": y_clk})
                     st.rerun()
+                elif "Verticale" in tv_tool:
+                    st.session_state["tv_shapes_list"].append({"ticker": tv_ticker, "type": "vertical", "x0": x_clk, "y0": y_clk})
+                    st.rerun()
                 else:
                     if st.session_state["tv_pt_a"] is None:
                         st.session_state["tv_pt_a"] = {"x": x_clk, "y": y_clk}
@@ -997,8 +970,39 @@ if scelta_modulo == "🧪 TradingView Pro":
                             st.session_state["tv_pt_a"] = None
                             st.rerun()
     # ==========================================================================
-    # TAB 19: PARTE 4A - TICKET SIZING MANUALE, PONTE FINECOX & CONTROLLI
+    # TAB 19: PARTE 5A - SYNC GITHUB, SIZING & PULSANTI CONTROLLO
     # ==========================================================================
+    def _sync_github_prolab(percorso_file, contenuto_dict, messaggio_commit):
+        gh_token = os.getenv("GITHUB_TOKEN")
+        gh_repo = os.getenv("GITHUB_REPO")
+        if not gh_token or not gh_repo:
+            return False, "Variabili GITHUB_TOKEN o GITHUB_REPO mancanti nei Secrets/env."
+
+        url_api = f"https://github.com{gh_repo}/contents/{percorso_file}"
+        headers = {"Authorization": f"token {gh_token}", "Accept": "application/vnd.github.v3+json"}
+
+        sha_esistente = None
+        try:
+            res_get = requests.get(url_api, headers=headers, timeout=10)
+            if res_get.status_code == 200:
+                sha_esistente = res_get.json().get("sha")
+        except Exception:
+            pass
+
+        testo_json = json.dumps(contenuto_dict, indent=4)
+        contenuto_b64 = base64.b64encode(testo_json.encode("utf-8")).decode("utf-8")
+        payload = {"message": messaggio_commit, "content": contenuto_b64}
+        if sha_esistente:
+            payload["sha"] = sha_esistente
+
+        try:
+            res_put = requests.put(url_api, headers=headers, json=payload, timeout=10)
+            if res_put.status_code in (200, 201):
+                return True, "Sincronizzato su GitHub con successo!"
+            return False, f"Errore API GitHub: {res_put.status_code}"
+        except Exception as ex_gh:
+            return False, f"Errore connessione GitHub: {ex_gh}"
+
     if "Posizione" in tv_tool:
         with st.expander("🎯 Calcolatore Esatto Posizione & Size (Entry / Stop Loss / Take Profit)", expanded=True):
             pc1, pc2, pc3, pc4 = st.columns(4)
@@ -1045,7 +1049,7 @@ if scelta_modulo == "🧪 TradingView Pro":
         if st.session_state["tv_pt_a"]:
             st.info(f"📍 Primo punto fissato a **{round(st.session_state['tv_pt_a']['y'], 2)} $** — Clicca il secondo punto.")
         else:
-            st.caption("💡 Clicca sul grafico per tracciare. Gli alert già armati appaiono in verde.")
+            st.caption("💡 Verde = Alert Prezzo attivi | Viola = Alert Temporali attivi.")
     with ctrl2:
         if st.button("↩️ Annulla Ultimo Disegno", use_container_width=True):
             if st.session_state["tv_pt_a"] is not None:
@@ -1059,55 +1063,17 @@ if scelta_modulo == "🧪 TradingView Pro":
             st.session_state["tv_shapes_list"] = [s for s in st.session_state["tv_shapes_list"] if s["ticker"] != tv_ticker]
             st.rerun()
     # ==========================================================================
-    # TAB 19: PARTE 4B - ARMATURA ALERT TELEGRAM & SYNC GITHUB
+    # TAB 19: PARTE 5B - ARMATURA ALERT DA DISEGNI (PREZZO + TEMPO)
     # ==========================================================================
-    def _sync_github_prolab(percorso_file, contenuto_dict, messaggio_commit):
-        gh_token = os.getenv("GITHUB_TOKEN")
-        gh_repo = os.getenv("GITHUB_REPO")
-        if not gh_token or not gh_repo:
-            return False, "Variabili GITHUB_TOKEN o GITHUB_REPO mancanti nei Secrets/env."
-
-        url_api = f"https://github.com{gh_repo}/contents/{percorso_file}"
-        headers = {
-            "Authorization": f"token {gh_token}",
-            "Accept": "application/vnd.github.v3+json"
-        }
-
-        sha_esistente = None
-        try:
-            res_get = requests.get(url_api, headers=headers, timeout=10)
-            if res_get.status_code == 200:
-                sha_esistente = res_get.json().get("sha")
-        except Exception:
-            pass
-
-        testo_json = json.dumps(contenuto_dict, indent=4)
-        contenuto_b64 = base64.b64encode(testo_json.encode("utf-8")).decode("utf-8")
-
-        payload = {
-            "message": messaggio_commit,
-            "content": contenuto_b64
-        }
-        if sha_esistente:
-            payload["sha"] = sha_esistente
-
-        try:
-            res_put = requests.put(url_api, headers=headers, json=payload, timeout=10)
-            if res_put.status_code in (200, 201):
-                return True, "Sincronizzato su GitHub con successo!"
-            return False, f"Errore API GitHub: {res_put.status_code}"
-        except Exception as ex_gh:
-            return False, f"Errore connessione GitHub: {ex_gh}"
-
     st.markdown("---")
-    st.markdown("##### 🔔 Arma Alert Telegram & Sincronizza Disegni su GitHub (`alerts_geometrici_v2.json`)")
+    st.markdown("##### 🔔 1. Arma Alert da Disegni (Prezzo & Linee Temporali Verticali)")
 
-    forme_ticker_corrente = [s for s in st.session_state["tv_shapes_list"] if s["ticker"] == tv_ticker and s["type"] in ["horizontal", "trendline", "rect", "rr_tool"]]
+    forme_ticker_corrente = [s for s in st.session_state["tv_shapes_list"] if s["ticker"] == tv_ticker and s["type"] in ["horizontal", "vertical", "trendline", "rect", "rr_tool"]]
 
     gh_c1, gh_c2, gh_c3 = st.columns([1.4, 1.3, 1.3])
     with gh_c1:
         filtro_maru_tv = st.selectbox(
-            "Filtro Candela di Conferma:",
+            "Filtro Candela di Conferma (solo linee prezzo):",
             ["80% Corpo Minimo (Standard)", "100% Marubozu Piena", "Qualsiasi Chiusura (0% - Immediato)"],
             index=0,
             key="tv_lab_maru_sel"
@@ -1115,10 +1081,10 @@ if scelta_modulo == "🧪 TradingView Pro":
         soglia_maru_tv = 80.0 if "80%" in filtro_maru_tv else (98.0 if "100%" in filtro_maru_tv else 0.0)
     with gh_c2:
         st.markdown("<div style='padding-top:28px;'></div>", unsafe_allow_html=True)
-        st.write(f"📐 Nuove geometrie per **{tv_ticker}**: **{len(forme_ticker_corrente)}**")
+        st.write(f"📐 Disegni pronti per **{tv_ticker}**: **{len(forme_ticker_corrente)}**")
     with gh_c3:
         st.markdown("<div style='padding-top:24px;'></div>", unsafe_allow_html=True)
-        if st.button("💾 Arma Alert & Salva su GitHub", type="primary", use_container_width=True, disabled=(len(forme_ticker_corrente) == 0), key="tv_lab_save_gh"):
+        if st.button("💾 Arma Disegni & Salva su GitHub", type="primary", use_container_width=True, disabled=(len(forme_ticker_corrente) == 0), key="tv_lab_save_gh"):
             FILE_GEO_TV = "alerts_geometrici_v2.json"
             try:
                 with open(FILE_GEO_TV, "r") as f_r:
@@ -1131,7 +1097,18 @@ if scelta_modulo == "🧪 TradingView Pro":
             aggiunti_tv = 0
             for shp in forme_ticker_corrente:
                 st_t = shp["type"]
-                if st_t == "horizontal":
+                if st_t == "vertical":
+                    data_target_str = str(shp["x0"])[:10]
+                    k_id = f"{tv_ticker}_{tv_tf}_vertical_{len(db_alerts_tv) + aggiunti_tv}"
+                    db_alerts_tv[k_id] = {
+                        "Ticker": tv_ticker, "Timeframe_Label": tv_tf_label, "Timeframe": tv_tf,
+                        "Tipo_Geometria": "vertical", "x0": data_target_str, "x1": data_target_str,
+                        "y0": float(shp["y0"]), "y1": float(shp["y0"]),
+                        "Regola": f"⏳ Scadenza Temporale ({data_target_str})",
+                        "Soglia_Corpo_Pct": 0.0, "Stato": "ATTIVO"
+                    }
+                    aggiunti_tv += 1
+                elif st_t == "horizontal":
                     k_id = f"{tv_ticker}_{tv_tf}_horizontal_{len(db_alerts_tv) + aggiunti_tv}"
                     db_alerts_tv[k_id] = {
                         "Ticker": tv_ticker, "Timeframe_Label": tv_tf_label, "Timeframe": tv_tf,
@@ -1190,25 +1167,70 @@ if scelta_modulo == "🧪 TradingView Pro":
                 st.warning(f"⚠️ Salvati in locale ({aggiunti_tv} alert), ma sync GitHub non riuscito: {msg_gh_tv}")
             st.rerun()
     # ==========================================================================
-    # TAB 19: PARTE 4C - REGISTRO GESTIONE ALERT GIÀ ARMATI SUL CLOUD
+    # TAB 19: PARTE 5C - ALERT SU INDICATORI & REGISTRO GESTIONE CLOUD
     # ==========================================================================
+    st.markdown("##### 🧠 2. Arma Alert su Indicatori & Regimi (Senza Disegnare Linee)")
+    ind_a1, ind_a2 = st.columns([2.2, 1.3])
+    with ind_a1:
+        cond_ind_scelta = st.selectbox(
+            "Seleziona condizione quantitativa da monitorare:",
+            [
+                "📉 Z-Score Estremo (Incrocio ±2.0)",
+                f"🚀 Forza Relativa (RS incrocia al rialzo EMA 20 vs {tv_bench_rs})",
+                "🏛️ Trend Strutturale (Chiusura sopra/sotto EMA 200)",
+                "🌀 Volatility Squeeze (Compressione Bande Bollinger < 15° pct)"
+            ],
+            key="tv_ind_alert_sel"
+        )
+    with ind_a2:
+        st.markdown("<div style='padding-top:28px;'></div>", unsafe_allow_html=True)
+        if st.button("⚡ Arma Alert Indicatore su GitHub", use_container_width=True, key="tv_btn_ind_alert"):
+            FILE_GEO_TV = "alerts_geometrici_v2.json"
+            try:
+                with open(FILE_GEO_TV, "r") as f_r:
+                    db_alerts_tv = json.load(f_r)
+                if not isinstance(db_alerts_tv, dict):
+                    db_alerts_tv = {}
+            except Exception:
+                db_alerts_tv = {}
+
+            k_ind = f"{tv_ticker}_{tv_tf}_indicator_{len(db_alerts_tv)}"
+            db_alerts_tv[k_ind] = {
+                "Ticker": tv_ticker, "Timeframe_Label": tv_tf_label, "Timeframe": tv_tf,
+                "Tipo_Geometria": "indicator", "x0": str(d_end)[:10], "x1": str(d_end)[:10],
+                "y0": p_now_tv, "y1": p_now_tv,
+                "Regola": cond_ind_scelta,
+                "Soglia_Corpo_Pct": 0.0, "Stato": "ATTIVO"
+            }
+            with open(FILE_GEO_TV, "w") as f_w:
+                json.dump(db_alerts_tv, f_w, indent=4)
+            ok_gh_i, msg_gh_i = _sync_github_prolab(FILE_GEO_TV, db_alerts_tv, f"Alert indicatore {tv_ticker}")
+            if ok_gh_i:
+                st.success("✅ Alert indicatore armato e sincronizzato su GitHub!")
+            else:
+                st.warning(f"⚠️ Salvato in locale, ma sync GitHub non riuscito: {msg_gh_i}")
+            st.rerun()
+
+    # Registro Gestione Alert già armati sul Cloud
     if db_geo_view:
         righe_alert_tv = []
         chiavi_alert_tv = []
         for k_al, v_al in db_geo_view.items():
             if v_al:
                 chiavi_alert_tv.append(k_al)
+                t_g_str = str(v_al.get("Tipo_Geometria", "")).upper()
+                rif_str = str(v_al.get("x0", ""))[:10] if t_g_str == "VERTICAL" else f"{round(float(v_al.get('y0', 0.0)), 2)} $"
                 righe_alert_tv.append({
                     "ID": k_al,
                     "Ticker": v_al.get("Ticker"),
                     "Timeframe": v_al.get("Timeframe_Label"),
-                    "Tipo": str(v_al.get("Tipo_Geometria", "")).upper(),
-                    "Quota ($)": round(float(v_al.get("y0", 0.0)), 2),
+                    "Tipo": t_g_str,
+                    "Target (Prezzo / Data)": rif_str,
                     "Regola": v_al.get("Regola", ""),
                     "Corpo %": f"{int(v_al.get('Soglia_Corpo_Pct', 0))}%"
                 })
         if righe_alert_tv:
-            st.markdown("##### 📋 Registro Alert Attivi sul Cloud (Visibili in Verde sul Grafico)")
+            st.markdown("##### 📋 Registro Alert Attivi sul Cloud (Prezzo, Tempo & Indicatori)")
             st.dataframe(pd.DataFrame(righe_alert_tv), use_container_width=True, hide_index=True)
 
             del_c1, del_c2 = st.columns([2.5, 1.5])
