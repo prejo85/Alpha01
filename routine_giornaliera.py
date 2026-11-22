@@ -214,21 +214,27 @@ def esegui_routine_giornaliera():
                             alert_rischio.append(f"⚠️ <b>Correlazione Alta:</b> {cols[i]} / {cols[j]} = <code>{val_r:.2f}</code>")
 
     # ==========================================================================
-    # 4. INVIO REPORT SERALE SU TELEGRAM
+    # 4. INVIO REPORT SERALE SU TELEGRAM (SEMPRE ATTIVO)
     # ==========================================================================
-    if notifiche or alert_rischio:
-        msg_finale = ["🌙 <b>REPORT SERALE GIORNALIERO QUANTANALISYS</b>\n"]
-        if notifiche:
-            msg_finale.append("🔔 <b>SEGNALI OPERATIVI:</b>")
-            msg_finale.extend(notifiche)
-            msg_finale.append("")
-        if alert_rischio:
-            msg_finale.append("🛡️ <b>CONTROLLO RISCHIO PORTAFOGLIO:</b>")
-            msg_finale.extend(alert_rischio)
-        invia_telegram("\n".join(msg_finale))
+    msg_finale = ["🌙 <b>REPORT SERALE GIORNALIERO QUANTANALISYS</b>\n"]
+    if notifiche:
+        msg_finale.append("🔔 <b>SEGNALI OPERATIVI:</b>")
+        msg_finale.extend(notifiche)
+        msg_finale.append("")
     else:
-        print("Nessun breakout o allarme di rischio nella seduta odierna.")
+        msg_finale.append(f"⚪ <i>Nessun breakout rilevato sulle {len(db_canvas)} linee attive del Canvas.</i>\n")
+
+    if alert_rischio:
+        msg_finale.append("🛡️ <b>CONTROLLO RISCHIO PORTAFOGLIO:</b>")
+        msg_finale.extend(alert_rischio)
+    else:
+        msg_finale.append("⚖️ <i>Nessuna posizione attiva in posizioni_z.json.</i>")
+
+    invia_telegram("\n".join(msg_finale))
+    print("Report serale inviato su Telegram.")
 
 
 if __name__ == "__main__":
+    esegui_routine_giornaliera()
+ain__":
     esegui_routine_giornaliera()
