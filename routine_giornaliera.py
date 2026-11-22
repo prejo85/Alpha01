@@ -236,5 +236,4 @@ def esegui_routine_giornaliera():
 
 if __name__ == "__main__":
     esegui_routine_giornaliera()
-ain__":
-    esegui_routine_giornaliera()
+
