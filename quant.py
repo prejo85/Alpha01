@@ -567,20 +567,26 @@ if scelta_modulo == "🧪 TradingView Pro":
         (low_s - close_s.shift(1)).abs()
     ], axis=1).max(axis=1)
     df_tv["ATR"] = tr_tv.rolling(14).mean().bfill()
-    atr_now_tv = float(df_tv["ATR"].iloc[-1])
-    p_now_tv = float(close_s.iloc[-1])
+    atr_now_tv = float(df_tv["ATR"].to_numpy()[-1])
+    p_now_tv = float(close_s.to_numpy()[-1])
     atr_pct_tv = (atr_now_tv / p_now_tv * 100.0) if p_now_tv > 0 else 0.0
 
     vol_sma20_tv = vol_s.rolling(20).mean()
-    rvol_now_tv = float(vol_s.iloc[-1] / vol_sma20_tv.iloc[-1]) if (len(vol_sma20_tv) >= 20 and vol_sma20_tv.iloc[-1] > 0) else 1.0
+    v_last_tv = float(vol_s.to_numpy()[-1])
+    v_sma_last_tv = float(vol_sma20_tv.to_numpy()[-1]) if len(vol_sma20_tv) >= 20 else 0.0
+    rvol_now_tv = (v_last_tv / v_sma_last_tv) if (v_sma_last_tv > 0 and not np.isnan(v_sma_last_tv)) else 1.0
 
     # Calcolo Esponente di Hurst sulla finestra disponibile
-    log_c_tv = np.log(close_s.dropna().values)
+    log_c_tv = np.log(close_s.dropna().to_numpy())
     if len(log_c_tv) >= 50:
         sub_h = log_c_tv[-min(126, len(log_c_tv)):]
         lags_tv = range(10, min(35, len(sub_h) // 2))
         tau_tv = [max(1e-8, float(np.std(sub_h[lg:] - sub_h[:-lg]))) for lg in lags_tv]
-        hurst_tv = float(np.clip(np.polyfit(np.log(list(lags_tv)), np.log(tau_tv), 1)[0] * 2.0, 0.05, 0.95)) if len(tau_tv) >= 5 else 0.50
+        if len(tau_tv) >= 5:
+            poly_h_tv = np.polyfit(np.log(list(lags_tv)), np.log(tau_tv), 1)
+            hurst_tv = float(np.clip(float(poly_h_tv[0]) * 2.0, 0.05, 0.95))
+        else:
+            hurst_tv = 0.50
     else:
         hurst_tv = 0.50
 
@@ -628,7 +634,7 @@ if scelta_modulo == "🧪 TradingView Pro":
     with q_k4:
         st.metric("📅 Prossimi Earnings", earn_lbl_tv, earn_delta_tv)
 
-    # Calcolo Indicatori e Oscillatori
+    # Calcolo Indicatori Overlay
     if "EMA 20" in tv_ema_scelte:
         df_tv["EMA20"] = close_s.ewm(span=20, adjust=False).mean()
     if "EMA 50" in tv_ema_scelte:
@@ -648,6 +654,7 @@ if scelta_modulo == "🧪 TradingView Pro":
         tp = (high_s + low_s + close_s) / 3.0
         df_tv["VWAP"] = (tp * vol_s).cumsum() / vol_s.cumsum().replace(0, np.nan)
 
+    # Calcolo Oscillatori Inferiori
     if tv_sub_osc == "RSI (14)":
         delta = close_s.diff()
         gain = delta.where(delta > 0, 0).rolling(14).mean()
