@@ -691,7 +691,7 @@ if scelta_modulo == "🧪 TradingView Pro":
             df_b_rs.columns = [str(c).strip() for c in df_b_rs.columns]
             b_close = df_b_rs["Close"].astype(float).reindex(df_tv.index).ffill().bfill()
             rs_raw = (close_s / b_close.replace(0, np.nan)).ffill().bfill()
-            primo_val = float(rs_raw.to_numpy()) if len(rs_raw) > 0 else 1.0
+            primo_val = float(rs_raw.to_numpy().item(0)) if len(rs_raw) > 0 else 1.0
             rs_norm = (rs_raw / primo_val) * 100.0 if primo_val > 0 else rs_raw
             df_tv["RS_Line"] = rs_norm
             df_tv["RS_EMA20"] = rs_norm.ewm(span=20, adjust=False).mean()
