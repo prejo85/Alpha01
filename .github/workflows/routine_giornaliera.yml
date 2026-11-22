@@ -1,0 +1,41 @@
+name: Routine Giornaliera Serale Quantanalisys
+
+on:
+  schedule:
+    # Esegue dal lunedì al venerdì alle 21:30 UTC (22:30 ora italiana, dopo chiusura USA)
+    - cron: '30 21 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run-daily-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Scarica codice repository
+        uses: actions/checkout@v4
+
+      - name: Configura Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installa librerie
+        run: |
+          pip install yfinance pandas numpy requests
+
+      - name: Esegui Controllo Serale Canvas, Z-Score & Rischio
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python routine_giornaliera.py
+
+      - name: Aggiorna file JSON nel repository se modificati
+        run: |
+          git config --local user.email "github-actions[bot]@://github.com"
+          git config --local user.name "github-actions[bot]"
+          git add alerts_geometrici_v2.json posizioni_z.json || true
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update JSON alerts dopo controllo serale" && git push)
