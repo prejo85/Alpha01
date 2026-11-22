@@ -585,7 +585,7 @@ if scelta_modulo == "🧪 TradingView Pro":
         tau_tv = [max(1e-8, float(np.std(sub_h[lg:] - sub_h[:-lg]))) for lg in lags_tv]
         if len(tau_tv) >= 5:
             poly_h_tv = np.polyfit(np.log(list(lags_tv)), np.log(tau_tv), 1)
-            hurst_tv = float(np.clip(float(poly_h_tv) * 2.0, 0.05, 0.95))
+            hurst_tv = float(np.clip(float(poly_h_tv.item(0)) * 2.0, 0.05, 0.95))
         else:
             hurst_tv = 0.50
     else:
