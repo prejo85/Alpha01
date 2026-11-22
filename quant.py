@@ -946,12 +946,11 @@ if scelta_modulo == "🧪 TradingView Pro":
             fig_tv.add_hline(y=0.0, line_dash="solid", line_color="rgba(255,255,255,0.2)", row=curr_row, col=1)
             fig_tv.add_hline(y=-2.0, line_dash="dash", line_color="#ef4444", annotation_text="-2.0", row=curr_row, col=1)
             fig_tv.update_yaxes(title_text="Z-Score", range=(-4.5, 4.5), row=curr_row, col=1)
-		elif tv_sub_osc == "Forza Relativa vs Benchmark (RS)" and "RS_Line" in df_tv.columns:
+        elif tv_sub_osc == "Forza Relativa vs Benchmark (RS)" and "RS_Line" in df_tv.columns:
             fig_tv.add_trace(grp.Scatter(x=df_tv.index, y=df_tv["RS_Line"], mode="lines", line=dict(color="#22c55e", width=1.8), name=f"RS vs {tv_bench_rs}"), row=curr_row, col=1)
             fig_tv.add_trace(grp.Scatter(x=df_tv.index, y=df_tv["RS_EMA20"], mode="lines", line=dict(color="#f59e0b", width=1.3, dash="dash"), name="EMA 20 RS"), row=curr_row, col=1)
             fig_tv.add_hline(y=100.0, line_dash="dot", line_color="rgba(255,255,255,0.25)", row=curr_row, col=1)
             fig_tv.update_yaxes(title_text=f"RS ({tv_bench_rs})", row=curr_row, col=1)
-
 
     fig_tv.update_layout(
         template="plotly_dark", height=720, margin=dict(l=20, r=20, t=15, b=15),
