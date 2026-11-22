@@ -20,7 +20,7 @@ def invia_telegram(testo: str) -> bool:
     if not BOT_TOKEN:
         print("TELEGRAM_TOKEN mancante.")
         return False
-    url = f"https://telegram.org{BOT_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": int(T_ID),
         "text": testo,
