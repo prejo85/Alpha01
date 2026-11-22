@@ -1061,6 +1061,44 @@ if scelta_modulo == "🧪 TradingView Pro":
     # ==========================================================================
     # TAB 19: PARTE 4B - ARMATURA ALERT TELEGRAM & SYNC GITHUB
     # ==========================================================================
+    def _sync_github_prolab(percorso_file, contenuto_dict, messaggio_commit):
+        gh_token = os.getenv("GITHUB_TOKEN")
+        gh_repo = os.getenv("GITHUB_REPO")
+        if not gh_token or not gh_repo:
+            return False, "Variabili GITHUB_TOKEN o GITHUB_REPO mancanti nei Secrets/env."
+
+        url_api = f"https://github.com{gh_repo}/contents/{percorso_file}"
+        headers = {
+            "Authorization": f"token {gh_token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+
+        sha_esistente = None
+        try:
+            res_get = requests.get(url_api, headers=headers, timeout=10)
+            if res_get.status_code == 200:
+                sha_esistente = res_get.json().get("sha")
+        except Exception:
+            pass
+
+        testo_json = json.dumps(contenuto_dict, indent=4)
+        contenuto_b64 = base64.b64encode(testo_json.encode("utf-8")).decode("utf-8")
+
+        payload = {
+            "message": messaggio_commit,
+            "content": contenuto_b64
+        }
+        if sha_esistente:
+            payload["sha"] = sha_esistente
+
+        try:
+            res_put = requests.put(url_api, headers=headers, json=payload, timeout=10)
+            if res_put.status_code in (200, 201):
+                return True, "Sincronizzato su GitHub con successo!"
+            return False, f"Errore API GitHub: {res_put.status_code}"
+        except Exception as ex_gh:
+            return False, f"Errore connessione GitHub: {ex_gh}"
+
     st.markdown("---")
     st.markdown("##### 🔔 Arma Alert Telegram & Sincronizza Disegni su GitHub (`alerts_geometrici_v2.json`)")
 
@@ -1145,7 +1183,7 @@ if scelta_modulo == "🧪 TradingView Pro":
                 json.dump(db_alerts_tv, f_w, indent=4)
 
             st.session_state["tv_shapes_list"] = [s for s in st.session_state["tv_shapes_list"] if s["ticker"] != tv_ticker]
-            ok_gh_tv, msg_gh_tv = salva_json_su_github(FILE_GEO_TV, db_alerts_tv, f"Nuovi alert {tv_ticker} da Pro Lab")
+            ok_gh_tv, msg_gh_tv = _sync_github_prolab(FILE_GEO_TV, db_alerts_tv, f"Nuovi alert {tv_ticker} da Pro Lab")
             if ok_gh_tv:
                 st.success(f"✅ {aggiunti_tv} alert armati e sincronizzati su GitHub!")
             else:
@@ -1189,7 +1227,7 @@ if scelta_modulo == "🧪 TradingView Pro":
                         del db_geo_view[id_del_tv]
                         with open("alerts_geometrici_v2.json", "w") as f_del:
                             json.dump(db_geo_view, f_del, indent=4)
-                        salva_json_su_github("alerts_geometrici_v2.json", db_geo_view, f"Eliminato alert {tk_rem} da Pro Lab")
+                        _sync_github_prolab("alerts_geometrici_v2.json", db_geo_view, f"Eliminato alert {tk_rem} da Pro Lab")
                         st.rerun()
 
 
