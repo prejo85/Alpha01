@@ -677,14 +677,14 @@ if scelta_modulo == "🧪 TradingView Pro":
         cov_z = sxy / n_z - (mx * my)
         std_res = np.sqrt(np.clip(vy - (2 * m_z * cov_z) + (m_z**2 * vx), 1e-5, None))
         df_tv["Z_Score"] = ((close_s - p_teo) / std_res).fillna(0.0)
-		
-	elif tv_sub_osc == "Forza Relativa vs Benchmark (RS)":
+    elif tv_sub_osc == "Forza Relativa vs Benchmark (RS)":
         df_b_rs = yf.download(tickers=tv_bench_rs, period=tv_per, interval=tv_tf, auto_adjust=False, multi_level_index=False, progress=False)
         if df_b_rs is not None and not df_b_rs.empty:
             df_b_rs.columns = [str(c).strip() for c in df_b_rs.columns]
             b_close = df_b_rs["Close"].astype(float).reindex(df_tv.index).ffill().bfill()
-            rs_raw = (close_s / b_close.replace(0, np.nan)).ffill()
-            rs_norm = (rs_raw / float(rs_raw.iloc[0])) * 100.0 if float(rs_raw.iloc[0]) > 0 else rs_raw
+            rs_raw = (close_s / b_close.replace(0, np.nan)).ffill().bfill()
+            primo_val = float(rs_raw.to_numpy()[0]) if len(rs_raw) > 0 else 1.0
+            rs_norm = (rs_raw / primo_val) * 100.0 if primo_val > 0 else rs_raw
             df_tv["RS_Line"] = rs_norm
             df_tv["RS_EMA20"] = rs_norm.ewm(span=20, adjust=False).mean()
         else:
