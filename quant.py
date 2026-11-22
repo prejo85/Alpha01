@@ -415,12 +415,14 @@ st.title(f"{scelta_modulo}")
 # ==============================================================================
 descrizioni_moduli = {
 
-        "🧪 TradingView Pro": (
-        "**Scopo Operativo & Architettura:** Workstation grafica interattiva multi-timeframe (15m–1M) "
-        "dotata di indicatori tecnici sovrapponibili (EMA 20/50/100/200, Bande di Bollinger, VWAP), "
-        "oscillatori sincronizzati (RSI, MACD), Triple Volume Profile e strumenti di disegno "
-        "con aggancio magnetico alle candele (Trendline, Livelli Orizzontali, Rettangoli, Fibonacci e Tool R:R)."
-    ),
+        "🧪 TradingView Pro Lab (Test)": (
+        "**Scopo Operativo & Architettura:** Workstation grafica quantitativa multi-timeframe (15m–1M) "
+        "con barra contesto in tempo reale (**Esponente di Hurst**, **ATR 14**, **RVOL** e **Calendario Earnings**). "
+        "Integra indicatori sovrapponibili (EMA 20/50/100/200, Bande di Bollinger, VWAP, Swing High/Low), "
+        "oscillatori sincronizzati (RSI, MACD, Z-Score ±2), Triple Volume Profile, strumenti di disegno "
+        "con **Position Sizing automatico** nel Tool R:R e salvataggio alert su **GitHub (`alerts_geometrici_v2.json`)**."
+     ),
+
         "📈 Analisi GARCH Volatilità": (
         "**Scopo Operativo & Architettura:** Modellizza i fenomeni finanziari dei cluster di volatilità (*volatility clustering*) "
         "e i picchi asimmetrici generati dal panico di mercato. Sfrutta la libreria econometrica `arch` per configurare i parametri "
