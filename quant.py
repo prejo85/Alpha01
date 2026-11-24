@@ -360,6 +360,51 @@ def calc_vp(df, div=200):
         else: idx_a += 1; v_current += v_p
     return poc, prices[min(div - 1, idx_a)], prices[max(0, idx_b)], prices, vols_list
 
+def rileva_wedge_e_marubozu(df_in, finestra=35, soglia_corpo_pct=75.0):
+    res_default = {
+        "wedge_valido": False, "breakout_marubozu": False,
+        "x_dates": [], "upper_y": [], "lower_y": [],
+        "upper_oggi": 0.0, "pct_corpo": 0.0
+    }
+    if df_in is None or len(df_in) < finestra:
+        return res_default
+
+    sub = df_in.tail(finestra).copy()
+    x_idx = np.arange(len(sub))
+    highs = sub["High"].astype(float).values
+    lows = sub["Low"].astype(float).values
+
+    m_up, q_up = np.polyfit(x_idx[:-1], highs[:-1], 1)
+    m_low, q_low = np.polyfit(x_idx[:-1], lows[:-1], 1)
+
+    if m_up < 0 and m_low < 0 and m_up < m_low:
+        upper_line = m_up * x_idx + q_up
+        lower_line = m_low * x_idx + q_low
+
+        o_last = float(sub["Open"].iloc[-1])
+        c_last = float(sub["Close"].iloc[-1])
+        h_last = float(sub["High"].iloc[-1])
+        l_last = float(sub["Low"].iloc[-1])
+
+        range_c = max(1e-6, h_last - l_last)
+        corpo_c = abs(c_last - o_last)
+        pct_corpo = round((corpo_c / range_c) * 100.0, 1)
+
+        upper_oggi = float(upper_line[-1])
+        is_breakout = (c_last > o_last) and (c_last > upper_oggi) and (pct_corpo >= soglia_corpo_pct)
+
+        return {
+            "wedge_valido": True,
+            "breakout_marubozu": is_breakout,
+            "x_dates": sub.index.tolist(),
+            "upper_y": upper_line.tolist(),
+            "lower_y": lower_line.tolist(),
+            "upper_oggi": upper_oggi,
+            "pct_corpo": pct_corpo
+        }
+
+    return res_default
+
 # ==============================================================================
 # STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
 # ==============================================================================
@@ -370,6 +415,7 @@ with st.sidebar:
 
     opzioni_menu = [
         "🧪 TradingView Pro",
+        "📁 Analisi Triple-POC",
         "📈 Analisi GARCH Volatilità",
     ]
 
@@ -403,6 +449,12 @@ st.title(f"{scelta_modulo}")
 # DISCOVERY COMPONENT: NOTE DI ARCHITETTURA E SCOPO OPERATIVO DEL MODULO SELEZIONATO
 # ==============================================================================
 descrizioni_moduli = {
+    "📁 Analisi Triple-POC": (
+        "**Scopo Operativo & Architettura:** Scarica i dati dell'asset selezionato e calcola il "
+        "Volume Profile (POC, VAH, VAL) su tre orizzonti temporali (storico globale, dall'ATH e recente "
+        "a scelta). Genera rispettivi sottoriquadri grafici complessi a assi temporali sincronizzati, "
+        "indicatori dinamici di momentum e volatilità (RSI, ATR, EMA200) e proietta le linee di trend strutturali sui massimi."
+    ),
 
         "🧪 TradingView Pro Lab (Test)": (
         "**Scopo Operativo & Architettura:** Workstation grafica quantitativa multi-timeframe (15m–1M) "
@@ -428,6 +480,313 @@ if scelta_modulo in descrizioni_moduli:
         </p>
     </div>
     """, unsafe_allow_html=True)
+
+# ==========================================
+# --- TAB 1: TRE POC SCANNER (PARTE 1/6) ---
+# ==========================================
+
+if scelta_modulo == "📁 Analisi Triple-POC":
+
+    st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Indicatori")
+    st.markdown("##### ⚙️ Personalizzazione Livelli Grafici")
+    t_col1, t_col2, t_col3, t_col4 = st.columns(4)
+    with t_col1:
+        mostra_poc = st.checkbox("Mostra Linea POC Entry (Rosso)", value=True, key="chk_poc")
+    with t_col2:
+        mostra_va = st.checkbox("Mostra Value Area & Istogrammi (VAH/VAL)", value=True, key="chk_va")
+    with t_col3:
+        mostra_rr = st.checkbox("Mostra Zone Target / Stop Loss Strategici (ATR 1:2)", value=True, key="chk_rr")
+    with t_col4:
+        mostra_bb = st.checkbox("Mostra Bande di Bollinger (Volatilità Price)", value=True, key="chk_bb")
+    
+    c_col1, c_col2 = st.columns(2)
+    with c_col1:
+        mostra_trend = st.checkbox("📐 Mostra Trendline Dinamica sui Massimi (Linea Bianca)", value=True, key="chk_trend")
+    with c_col2:
+        mostra_sl_tp = st.checkbox("🎯 Mostra Linee Orizzontali SL / TP (Gialla e Azzurra)", value=True, key="chk_sltp")
+    
+    st.markdown("---")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        paniere_selezionato = st.selectbox("Seleziona Indice/Paniere:", ELENCO_PANIERI, key="an_paniere")
+        ticker_caricati = ottieni_paniere(paniere_selezionato)
+        st.session_state.asset_type_index = 1 if paniere_selezionato == "Crypto" else 0
+    with col2:
+        asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"], index=st.session_state.asset_type_index, key="an_type")
+    with col3:
+        period_label = st.selectbox("Seleziona Estensione Profilo Recente:", ["3 Mesi", "6 Mesi", "9 Mesi"], key="an_period")
+        g3 = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}[period_label]
+    with col4:
+        tf_label = st.selectbox("Seleziona Timeframe Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)"], key="an_timeframe")
+        tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_label]
+
+    tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value="", height=100, key=f"an_area_{paniere_selezionato}")
+    # ==========================================
+    # --- TAB 1: TRE POC SCANNER (PARTE 2/6) ---
+    # ==========================================
+    if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
+        if tickers_input.strip() == "":
+            tickers = [t.strip().upper() for t in ticker_caricati.split(',') if t.strip()]
+        else:
+            tickers = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
+            
+        if not tickers: 
+            st.warning("Inserisci almeno un ticker valido.")
+        else:
+            if len(tickers) > 15:
+                st.info(f"⚠️ Paniere ampio ({len(tickers)} titoli): elaborazione limitata ai primi **15 ticker** per evitare blocchi API di Yahoo Finance.")
+                tickers = tickers[:15]
+
+            st.success("Generazione fogli ticker...")
+            fogli_ticker = st.tabs([t.replace("-USD", "") for t in tickers])
+            for ticker, foglio_attivo in zip(tickers, fogli_ticker):
+                with foglio_attivo:
+                    tk_yf = ticker + "-USD" if asset_type == "Criptovaluta" and not ticker.endswith("-USD") else ticker
+                    df_c = yf.download(tickers=tk_yf, period="max", interval=tf_attivo, auto_adjust=False, multi_level_index=False, progress=False)
+                    if df_c is not None and len(df_c) > 50:
+                        df_c.columns = [str(c).strip() for c in df_c.columns]
+                        close_series = df_c["Close"].astype(float)
+                        high_series = df_c["High"].astype(float)
+                        low_series = df_c["Low"].astype(float)
+                        d_ath = high_series.idxmax()
+                        p_att = float(close_series.iloc[-1])
+                        
+                        df_c["EMA200"] = close_series.ewm(span=200, min_periods=20, adjust=False).mean()
+                        ema200_att = float(df_c["EMA200"].iloc[-1])
+                        delta = close_series.diff()
+                        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                        df_c["RSI"] = 100 - (100 / (1 + (gain / np.where(loss == 0, 0.00001, loss))))
+                        
+                        tr = pd.concat([high_series-low_series, (high_series-close_series.shift(1)).abs(), (low_series-close_series.shift(1)).abs()], axis=1).max(axis=1)
+                        df_c["ATR"] = tr.rolling(window=14).mean().bfill()
+                        atr_att = float(df_c["ATR"].iloc[-1])
+                        
+                        df_ath_raw = df_c.loc[d_ath:].copy()
+                        df2 = df_ath_raw if len(df_ath_raw) >= 15 else df_c.tail(15).copy()
+                        df1, df3 = df_c.copy(), df_c.tail(g3).copy()
+                        
+                        p1, vh1, vl1, prz1, vl_v1 = calc_vp(df1)
+                        p2, vh2, vl2, prz2, vl_v2 = calc_vp(df2)
+                        p3, vh3, vl3, prz3, vl_v3 = calc_vp(df3)
+                        
+                        if None in [p1, vh1, vl1, p2, vh2, vl2, p3, vh3, vl3]:
+                            st.warning(f"Impossibile calcolare il Volume Profile per {ticker}.")
+                            continue
+                        
+                        is_long_1 = p_att >= p1
+                        is_long_2 = p_att >= p2
+                        is_long_3 = p_att >= p3
+                        
+                        sl_1 = p_att - (1.5 * atr_att) if is_long_1 else p_att + (1.5 * atr_att)
+                        tp_1 = p_att + (3.0 * atr_att) if is_long_1 else p_att - (3.0 * atr_att)
+                        sl_2 = p_att - (1.5 * atr_att) if is_long_2 else p_att + (1.5 * atr_att)
+                        tp_2 = p_att + (3.0 * atr_att) if is_long_2 else p_att - (3.0 * atr_att)
+                        sl_3 = p_att - (1.5 * atr_att) if is_long_3 else p_att + (1.5 * atr_att)
+                        tp_3 = p_att + (3.0 * atr_att) if is_long_3 else p_att - (3.0 * atr_att)
+                        
+                        dec_f = 4 if asset_type == "Criptovaluta" else 2
+                        st.markdown(f"""
+                        <div style='background: rgba(15, 23, 42, 0.6); padding: 15px; border-radius: 14px; margin-bottom: 25px; border: 1px solid rgba(56, 189, 248, 0.2);'>
+                            <h4 style='margin-top:0; color:#38bdf8; font-family: "Plus Jakarta Sans", sans-serif;'>🎯 Riepilogo Ingressi Operativi & Risk Management</h4>
+                            <p style='margin-bottom:6px; font-size:15px;'>📈 <b>1. Profilo Generale (Storico):</b> <span style='color:{"#22c55e" if is_long_1 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_1 else 'SHORT 🔴'}</span> | Entry: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p1, dec_f)}</b> | <span style='color:#f59e0b;'>SL: {round(sl_1, dec_f)}</span> | <span style='color:#06b6d4;'>TP: {round(tp_1, dec_f)}</span></p>
+                            <p style='margin-bottom:6px; font-size:15px;'>🏛️ <b>2. Profilo Dall'ATH:</b> <span style='color:{"#22c55e" if is_long_2 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_2 else 'SHORT 🔴'}</span> | Entry: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p2, dec_f)}</b> | <span style='color:#f59e0b;'>SL: {round(sl_2, dec_f)}</span> | <span style='color:#06b6d4;'>TP: {round(tp_2, dec_f)}</span></p>
+                            <p style='margin-bottom:0; font-size:15px;'>⚡ <b>3. Profilo Recente ({period_label}):</b> <span style='color:{"#22c55e" if is_long_3 else "#ef4444"}; font-weight:bold;'>{'LONG 🟢' if is_long_3 else 'SHORT 🔴'}</span> | Entry: <b>{round(p_att, dec_f)}</b> | POC: <b>{round(p3, dec_f)}</b> | <span style='color:#f59e0b;'>SL: {round(sl_3, dec_f)}</span> | <span style='color:#06b6d4;'>TP: {round(tp_3, dec_f)}</span></p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        # ==========================================
+                        # --- TAB 1: TRE POC SCANNER (PARTE 3/6) ---
+                        # ==========================================
+                        fig = make_subplots(
+                            rows=5, cols=1, vertical_spacing=0.06, row_heights=[0.24, 0.24, 0.24, 0.14, 0.14], 
+                            subplot_titles=(
+                                f"1. STORICO COMPLETO ({ticker}) — {'LONG 🟢' if is_long_1 else 'SHORT 🔴'} Entry: {round(p_att, dec_f)} | POC: {round(p1, dec_f)} | EMA200: {round(ema200_att, dec_f)}", 
+                                f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — {'LONG 🟢' if is_long_2 else 'SHORT 🔴'} Entry: {round(p_att, dec_f)} | POC: {round(p2, dec_f)}", 
+                                f"3. PROFILO RECENTE {period_label.upper()} — {'LONG 🟢' if is_long_3 else 'SHORT 🔴'} Entry: {round(p_att, dec_f)} | POC: {round(p3, dec_f)}", 
+                                "📊 RSI (14) — Momentum di Filtro", "📈 ATR (14) — Volatilità Dinamica"
+                            )
+                        )
+                        cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
+                        for r_idx, df_s, p_vp, v_vp, p_poc, p_vh, p_vl, nm in cfg:
+                            if df_s.empty:
+                                continue
+                            fig.add_trace(grp.Candlestick(x=df_s.index, open=df_s["Open"].astype(float), high=df_s["High"].astype(float), low=df_s["Low"].astype(float), close=df_s["Close"].astype(float), name=nm), row=r_idx, col=1)
+                            fig.add_trace(grp.Scatter(x=df_s.index, y=df_s["EMA200"], mode="lines", name="EMA 200", line=dict(color="#f43f5e", width=1.5)), row=r_idx, col=1)
+                            
+                            if mostra_bb and len(df_s) > 20:
+                                b_m = df_s["Close"].rolling(20).mean()
+                                b_s = df_s["Close"].rolling(20).std()
+                                fig.add_trace(grp.Scatter(x=df_s.index, y=b_m+(b_s*2), mode="lines", line=dict(color="rgba(56,189,248,0.25)", width=1, dash="dash")), row=r_idx, col=1)
+                                fig.add_trace(grp.Scatter(x=df_s.index, y=b_m-(b_s*2), mode="lines", line=dict(color="rgba(56,189,248,0.25)", width=1, dash="dash")), row=r_idx, col=1)
+                            
+                            if mostra_va and v_vp and max(v_vp) > 0:
+                                m_v, d_i, d_f = max(v_vp), df_s.index.min(), df_s.index.max()
+                                ext = max(1, (d_f - d_i).days)
+                                step_k = max(1, len(v_vp) // 50)
+                                for i in range(0, len(v_vp), step_k):
+                                    idx_f = min(i + step_k, len(v_vp) - 1)
+                                    y0_v, y1_v = float(p_vp[i]), float(p_vp[idx_f])
+                                    if y0_v == y1_v:
+                                        sp_m = max(1e-5, (max(p_vp) - min(p_vp)) * 0.005)
+                                        y0_v -= sp_m
+                                        y1_v += sp_m
+                                    w = (float(v_vp[i]) / m_v) * (ext * 0.18) if m_v > 0 else 0
+                                    fig.add_shape(type="rect", x0=d_i, x1=d_i + pd.Timedelta(days=int(w) if w > 0 else 1), y0=y0_v, y1=y1_v, fillcolor="rgba(242,142,43,0.20)" if p_vl <= p_vp[i] <= p_vh else "rgba(0,165,181,0.06)", line=dict(width=0), row=r_idx, col=1)
+                            
+                            is_long = p_att >= p_poc
+                            sl = p_att - (1.5 * atr_att) if is_long else p_att + (1.5 * atr_att)
+                            tp = p_att + (3.0 * atr_att) if is_long else p_att - (3.0 * atr_att)
+                            col_z = "rgba(34, 197, 94, 0.08)" if is_long else "rgba(239, 68, 68, 0.08)"
+                            ic, dir_n = ("🟢", "LONG") if is_long else ("🔴", "SHORT")
+                            
+                            d_lf = df_s.index[-1]
+                            d_li_rischio = df_s.index[-8] if len(df_s) > 8 else df_s.index[0]
+                                
+                            if mostra_rr and not np.isnan(atr_att):
+                                fig.add_shape(type="rect", x0=d_li_rischio, x1=d_lf, y0=min(p_att, tp), y1=max(p_att, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
+                            
+                            if mostra_poc:
+                                fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=p_poc, y1=p_poc, line=dict(color="#ef4444", width=2.5), row=r_idx, col=1)
+                            
+                            fig.add_shape(type="line", x0=df_s.index.min(), x1=d_lf, y0=p_att, y1=p_att, line=dict(color="#a855f7", width=2, dash="dot"), row=r_idx, col=1)
+                            
+                            if mostra_sl_tp and not np.isnan(atr_att):
+                                fig.add_shape(type="line", x0=d_li_rischio, x1=d_lf, y0=sl, y1=sl, line=dict(color="#f59e0b", width=2, dash="dash"), row=r_idx, col=1)
+                                fig.add_shape(type="line", x0=d_li_rischio, x1=d_lf, y0=tp, y1=tp, line=dict(color="#06b6d4", width=2, dash="solid"), row=r_idx, col=1)
+                            # ==========================================
+                            # --- TAB 1: TRE POC SCANNER (PARTE 4/6) ---
+                            # ==========================================
+                            if mostra_trend and r_idx == 3 and len(df_s) > 20:
+                                idx_max_assoluto = df_s["High"].idxmax()
+                                val_max_assoluto = float(df_s["High"].max())
+                                date_max_assoluto = pd.to_datetime(idx_max_assoluto)
+                                df_successivo = df_s.loc[date_max_assoluto:]
+                                
+                                if len(df_successivo) > 5:
+                                    punti_swing_lh = []
+                                    k_finestra = 3  
+                                    
+                                    for i in range(k_finestra, len(df_successivo) - k_finestra):
+                                        data_corrente = df_successivo.index[i]
+                                        val_corrente = float(df_successivo["High"].iloc[i])
+                                        max_sinistro = df_successivo["High"].iloc[i - k_finestra : i].max()
+                                        max_destro = df_successivo["High"].iloc[i + 1 : i + k_finestra + 1].max()
+                                        
+                                        if val_corrente >= max_sinistro and val_corrente >= max_destro:
+                                            if val_corrente < val_max_assoluto:
+                                                punti_swing_lh.append((data_corrente, val_corrente))
+                                                
+                                    if not punti_swing_lh:
+                                        for d_c, r_c in df_successivo.iloc[2:].iterrows():
+                                            if float(r_c["High"]) < val_max_assoluto:
+                                                punti_swing_lh.append((d_c, float(r_c["High"])))
+                                                
+                                    miglior_data_swing = None
+                                    pendenza_ottimale = -999999.0
+                                    
+                                    for data_sw, val_sw in punti_swing_lh:
+                                        dist_giorni = (data_sw - date_max_assoluto).days
+                                        if dist_giorni > 0:
+                                            m_trend = (val_sw - val_max_assoluto) / dist_giorni
+                                            intersezione_rilevata = False
+                                            for verif_idx in range(1, len(df_successivo)):
+                                                data_check = df_successivo.index[verif_idx]
+                                                giorni_check = (data_check - date_max_assoluto).days
+                                                prezzo_teorico_linea = val_max_assoluto + (m_trend * giorni_check)
+                                                if float(df_successivo["High"].iloc[verif_idx]) > prezzo_teorico_linea + 0.01:
+                                                    intersezione_rilevata = True
+                                                    break
+                                            if not intersezione_rilevata and m_trend > pendenza_ottimale:
+                                                pendenza_ottimale = m_trend
+                                                miglior_data_swing = data_sw
+                                                
+                                    if miglior_data_swing is None and punti_swing_lh:
+                                        punti_swing_lh.sort(key=lambda x: x[1], reverse=True)
+                                        miglior_data_swing, miglior_val_swing = punti_swing_lh[0]
+                                        dist_giorni = (miglior_data_swing - date_max_assoluto).days
+                                        if dist_giorni > 0:
+                                            pendenza_ottimale = (miglior_val_swing - val_max_assoluto) / dist_giorni
+                                            
+                                    if miglior_data_swing is not None:
+                                        giorni_totali_grafico = (df_s.index[-1] - date_max_assoluto).days
+                                        val_proiezione_destra = val_max_assoluto + (pendenza_ottimale * giorni_totali_grafico)
+                                        
+                                        fig.add_trace(
+                                            grp.Scatter(
+                                                x=[date_max_assoluto, df_s.index[-1]], 
+                                                y=[val_max_assoluto, val_proiezione_destra],
+                                                mode="lines",
+                                                line=dict(color="#ffffff", width=2.5, dash="solid"),
+                                                name="Trendline Strutturale LH",
+                                                showlegend=False
+                                            ),
+                                            row=r_idx, col=1
+                                        )
+                            # ==========================================
+                            # --- TAB 1: TRE POC SCANNER (PARTE 5/6) ---
+                            # ==========================================
+                            txt_label_grafico = f"📊 ENTRY {dir_n} {round(p_att, dec_f)}<br>🔸 SL: {round(sl, dec_f)}<br>🔹 TP: {round(tp, dec_f)}"
+                            fig.add_annotation(
+                                x=d_lf, y=p_att,
+                                text=txt_label_grafico,
+                                showarrow=True,
+                                arrowhead=2,
+                                arrowsize=1,
+                                arrowwidth=2,
+                                arrowcolor="#22c55e" if is_long else "#ef4444",
+                                ax=-65,
+                                ay=-45 if is_long else 45,
+                                align="left",
+                                font=dict(color="white", size=9, family="Plus Jakarta Sans"),
+                                bgcolor="#22c55e" if is_long else "#ef4444",
+                                bordercolor="white",
+                                borderwidth=1,
+                                borderpad=5,
+                                row=r_idx, col=1
+                            )
+
+                            # --- DISEGNO AUTOMATICO FALLING WEDGE SUL PROFILO RECENTE (r_idx == 3) ---
+                            if r_idx == 3 and len(df_s) >= 35:
+                                res_wedge = rileva_wedge_e_marubozu(df_s, finestra=35, soglia_corpo_pct=75.0)
+                                if res_wedge["wedge_valido"]:
+                                    colore_w = "#22c55e" if res_wedge["breakout_marubozu"] else "#38bdf8"
+                                    fig.add_trace(grp.Scatter(x=res_wedge["x_dates"], y=res_wedge["upper_y"], mode="lines", line=dict(color=colore_w, width=2, dash="dashdot"), name="Wedge Upper", showlegend=False), row=r_idx, col=1)
+                                    fig.add_trace(grp.Scatter(x=res_wedge["x_dates"], y=res_wedge["lower_y"], mode="lines", line=dict(color=colore_w, width=2, dash="dashdot"), name="Wedge Lower", showlegend=False), row=r_idx, col=1)
+                                    
+                                    if res_wedge["breakout_marubozu"]:
+                                        fig.add_annotation(
+                                            x=res_wedge["x_dates"][-1], y=res_wedge["upper_oggi"],
+                                            text=f"🚀 WEDGE BREAKOUT ({res_wedge['pct_corpo']}% Marubozu)",
+                                            showarrow=True, arrowhead=2, arrowcolor="#22c55e", ax=-50, ay=-40,
+                                            bgcolor="#22c55e", font=dict(color="white", size=10, weight="bold"),
+                                            row=r_idx, col=1
+                                        )
+                            
+                            txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Setup: {ic} {dir_n}<br>🟣 ENTRY: {round(p_att, dec_f)}<br>🔴 POC: {round(p_poc, dec_f)}<br>🟠 VAH: {round(p_vh, dec_f)}<br>🔵 VAL: {round(p_vl, dec_f)}"
+                            fig.add_annotation(
+                                xref="paper", yref=f"y{r_idx} domain",
+                                x=0.01, y=0.96,
+                                text=txt_leg, showarrow=False, align="left",
+                                bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.4)",
+                                borderwidth=1.5, borderpad=8, font=dict(color="white", size=10)
+                            )
+                        # ==========================================
+                        # --- TAB 1: TRE POC SCANNER (PARTE 6/6) ---
+                        # ==========================================
+                        df_recent_ind = df_c.tail(180 if tf_attivo == "1wk" else 365)
+                        fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["RSI"], mode="lines", name="RSI", line=dict(color="#a855f7", width=2)), row=4, col=1)
+                        fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=75, y1=75, line=dict(color="rgba(239, 68, 68, 0.4)", width=1.5, dash="dot"), row=4, col=1)
+                        fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=25, y1=25, line=dict(color="rgba(34, 197, 94, 0.4)", width=1.5, dash="dot"), row=4, col=1)
+                        fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#10b981", width=2)), row=5, col=1)
+                        
+                        fig.update_layout(template="plotly_dark", dragmode="pan", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
+                        fig.update_xaxes(fixedrange=False)
+                        fig.update_yaxes(fixedrange=False)
+                        st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}", config={'scrollZoom': True})
+
+                    else: 
+                        st.warning(f"Dati storici insufficienti per {ticker}.")
+
     
 # ==============================================================================
 # TAB 19: TRADINGVIEW PRO QUANTITATIVO (PARTE 1/5 - CONTROLLI & STRUMENTI)
