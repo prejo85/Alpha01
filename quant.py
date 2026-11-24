@@ -33,7 +33,7 @@ params_init = st.query_params
 if "ticker" in params_init and not st.session_state.get("url_gia_letto", False):
     tk_url = str(params_init["ticker"]).upper().strip()
     tf_url = str(params_init.get("tf", "Giornaliero (Daily)")).strip()
-    st.session_state["menu_navigazione_moduli"] = "📺 TradingView Interactive Canvas"
+    st.session_state["menu_navigazione_moduli"] = "🧪 TradingView Pro"
     st.session_state["can_tk"] = tk_url
     st.session_state["can_tf"] = tf_url
     st.session_state["url_gia_letto"] = True
@@ -129,17 +129,6 @@ if not st.session_state["autenticato"]:
 
     st.stop()
 
-
-# Intercetta i link diretti provenienti dagli alert Telegram
-params = st.query_params
-if "ticker" in params and not st.session_state.get("url_gia_letto", False):
-    tk_url = str(params["ticker"]).upper().strip()
-    tf_url = str(params.get("tf", "Giornaliero (Daily)")).strip()
-    
-    st.session_state["menu_navigazione_moduli"] = "📺 TradingView Interactive Canvas"
-    st.session_state["can_tk"] = tk_url
-    st.session_state["can_tf"] = tf_url
-    st.session_state["url_gia_letto"] = True
 
 # ==============================================================================
 # STILE DARK PREMIUM DA PREVIEW GRAFICA (SIDEBAR COORDINATA)
@@ -246,14 +235,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📐 Dashboard Quantanalisys")
-
 if "asset_type_index" not in st.session_state:
     st.session_state.asset_type_index = 0
+
 # PROTEZIONE: Recupero sicuro dei dati sensibili dall'ambiente
 T_ID = os.getenv("TELEGRAM_CHAT_ID", "2072895073")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
+
 # ==============================================================================
 # DATABASE INTERNO DEI PANIERI AZIONARI AGGIORNATO E AMPLIATO
 # ==============================================================================
@@ -978,7 +967,7 @@ if scelta_modulo == "🧪 TradingView Pro":
         if not gh_token or not gh_repo:
             return False, "Variabili GITHUB_TOKEN o GITHUB_REPO mancanti nei Secrets/env."
 
-        url_api = f"https://github.com{gh_repo}/contents/{percorso_file}"
+        url_api = f"https://github.com/{gh_repo}/contents/{percorso_file}"
         headers = {"Authorization": f"token {gh_token}", "Accept": "application/vnd.github.v3+json"}
 
         sha_esistente = None
