@@ -762,14 +762,16 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                                             row=r_idx, col=1
                                         )
                             
+                            y_ref_str = "y domain" if r_idx == 1 else f"y{r_idx} domain"
                             txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Setup: {ic} {dir_n}<br>🟣 ENTRY: {round(p_att, dec_f)}<br>🔴 POC: {round(p_poc, dec_f)}<br>🟠 VAH: {round(p_vh, dec_f)}<br>🔵 VAL: {round(p_vl, dec_f)}"
                             fig.add_annotation(
-                                xref="paper", yref=f"y{r_idx} domain",
+                                xref="paper", yref=y_ref_str,
                                 x=0.01, y=0.96,
                                 text=txt_leg, showarrow=False, align="left",
                                 bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.4)",
                                 borderwidth=1.5, borderpad=8, font=dict(color="white", size=10)
                             )
+
                         # ==========================================
                         # --- TAB 1: TRE POC SCANNER (PARTE 6/6) ---
                         # ==========================================
