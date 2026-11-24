@@ -520,8 +520,7 @@ if scelta_modulo == "📁 Analisi Triple-POC":
         tf_label = st.selectbox("Seleziona Timeframe Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)"], key="an_timeframe")
         tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_label]
 
-    tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value="", height=100, key=f"an_area_{paniere_selezionato}")
-    # ==========================================
+    tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value="", height=100, key=f"an_area_{paniere_selezionato}")    # ==========================================
     # --- TAB 1: TRE POC SCANNER (PARTE 2/6) ---
     # ==========================================
     if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
@@ -561,6 +560,26 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                         tr = pd.concat([high_series-low_series, (high_series-close_series.shift(1)).abs(), (low_series-close_series.shift(1)).abs()], axis=1).max(axis=1)
                         df_c["ATR"] = tr.rolling(window=14).mean().bfill()
                         atr_att = float(df_c["ATR"].iloc[-1])
+
+                        # Calcolo Z-Score (finestra 50) + Media Mobile 9 periodi
+                        n_z = min(50, max(10, len(close_series) // 2))
+                        x_z = np.arange(n_z)
+                        sx, sx2 = x_z.sum(), (x_z**2).sum()
+                        den_z = n_z * sx2 - (sx**2)
+                        sy = close_series.rolling(window=n_z).sum()
+                        sy2 = (close_series**2).rolling(window=n_z).sum()
+                        xy_c = np.convolve(close_series.values, x_z[::-1], mode="valid")
+                        sxy = pd.Series(np.nan, index=close_series.index)
+                        sxy.iloc[n_z - 1:] = xy_c
+                        m_z = (n_z * sxy - sx * sy) / den_z
+                        q_z = (sx2 * sy - sx * sxy) / den_z
+                        p_teo = m_z * n_z + q_z
+                        mx, vx = sx / n_z, sx2 / n_z - ((sx / n_z)**2)
+                        my, vy = sy / n_z, sy2 / n_z - ((sy / n_z)**2)
+                        cov_z = sxy / n_z - (mx * my)
+                        std_res = np.sqrt(np.clip(vy - (2 * m_z * cov_z) + (m_z**2 * vx), 1e-5, None))
+                        df_c["Z_Score"] = ((close_series - p_teo) / std_res).fillna(0.0)
+                        df_c["Z_Score_MA9"] = df_c["Z_Score"].rolling(9).mean()
                         
                         df_ath_raw = df_c.loc[d_ath:].copy()
                         df2 = df_ath_raw if len(df_ath_raw) >= 15 else df_c.tail(15).copy()
@@ -598,12 +617,15 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                         # --- TAB 1: TRE POC SCANNER (PARTE 3/6) ---
                         # ==========================================
                         fig = make_subplots(
-                            rows=5, cols=1, vertical_spacing=0.06, row_heights=[0.24, 0.24, 0.24, 0.14, 0.14], 
+                            rows=6, cols=1, vertical_spacing=0.045,
+                            row_heights=[0.20, 0.20, 0.22, 0.12, 0.12, 0.14], 
                             subplot_titles=(
                                 f"1. STORICO COMPLETO ({ticker}) — {'LONG 🟢' if is_long_1 else 'SHORT 🔴'} Entry: {round(p_att, dec_f)} | POC: {round(p1, dec_f)} | EMA200: {round(ema200_att, dec_f)}", 
                                 f"2. DALL'ATH ({d_ath.strftime('%d/%m/%Y')}) — {'LONG 🟢' if is_long_2 else 'SHORT 🔴'} Entry: {round(p_att, dec_f)} | POC: {round(p2, dec_f)}", 
                                 f"3. PROFILO RECENTE {period_label.upper()} — {'LONG 🟢' if is_long_3 else 'SHORT 🔴'} Entry: {round(p_att, dec_f)} | POC: {round(p3, dec_f)}", 
-                                "📊 RSI (14) — Momentum di Filtro", "📈 ATR (14) — Volatilità Dinamica"
+                                "📊 RSI (14) — Momentum di Filtro",
+                                "📈 ATR (14) — Volatilità Dinamica",
+                                "🌀 Z-SCORE (50) & SMA 9 (Arancione) — Deviazione Statistica"
                             )
                         )
                         cfg = [(1, df1, prz1, vl_v1, p1, vh1, vl1, "Generale"), (2, df2, prz2, vl_v2, p2, vh2, vl2, "ATH"), (3, df3, prz3, vl_v3, p3, vh3, vl3, f"{g3}D")]
@@ -640,7 +662,7 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                             ic, dir_n = ("🟢", "LONG") if is_long else ("🔴", "SHORT")
                             
                             d_lf = df_s.index[-1]
-                            d_li_rischio = df_s.index[-8] if len(df_s) > 8 else df_s.index[0]
+                            d_li_rischio = df_s.index[-8] if len(df_s) > 8 else df_s.index
                                 
                             if mostra_rr and not np.isnan(atr_att):
                                 fig.add_shape(type="rect", x0=d_li_rischio, x1=d_lf, y0=min(p_att, tp), y1=max(p_att, tp), fillcolor=col_z, line=dict(width=0), row=r_idx, col=1)
@@ -701,8 +723,8 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                                                 miglior_data_swing = data_sw
                                                 
                                     if miglior_data_swing is None and punti_swing_lh:
-                                        punti_swing_lh.sort(key=lambda x: x[1], reverse=True)
-                                        miglior_data_swing, miglior_val_swing = punti_swing_lh[0]
+                                        punti_swing_lh.sort(key=lambda x: x, reverse=True)
+                                        miglior_data_swing, miglior_val_swing = punti_swing_lh
                                         dist_giorni = (miglior_data_swing - date_max_assoluto).days
                                         if dist_giorni > 0:
                                             pendenza_ottimale = (miglior_val_swing - val_max_assoluto) / dist_giorni
@@ -745,9 +767,37 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                                 row=r_idx, col=1
                             )
 
-                            # --- DISEGNO AUTOMATICO FALLING WEDGE SUL PROFILO RECENTE (r_idx == 3) ---
+                            # --- MARUBOZU & FALLING WEDGE SUL PROFILO RECENTE (r_idx == 3) ---
                             if r_idx == 3 and len(df_s) >= 35:
                                 res_wedge = rileva_wedge_e_marubozu(df_s, finestra=35, soglia_corpo_pct=75.0)
+                                
+                                # Segnala tutte le candele Marubozu trovate nella finestra recente
+                                if res_wedge["marubozu_list"]:
+                                    bull_m = [m for m in res_wedge["marubozu_list"] if m["is_bull"]]
+                                    bear_m = [m for m in res_wedge["marubozu_list"] if not m["is_bull"]]
+                                    if bull_m:
+                                        fig.add_trace(grp.Scatter(
+                                            x=[m["date"] for m in bull_m],
+                                            y=[m["price"] * 1.006 for m in bull_m],
+                                            mode="markers+text",
+                                            marker=dict(color="#22c55e", size=10, symbol="diamond"),
+                                            text=[f"M {m['pct']}%" for m in bull_m],
+                                            textposition="top center",
+                                            textfont=dict(color="#22c55e", size=9),
+                                            showlegend=False
+                                        ), row=r_idx, col=1)
+                                    if bear_m:
+                                        fig.add_trace(grp.Scatter(
+                                            x=[m["date"] for m in bear_m],
+                                            y=[m["price"] * 0.994 for m in bear_m],
+                                            mode="markers+text",
+                                            marker=dict(color="#ef4444", size=10, symbol="diamond"),
+                                            text=[f"M {m['pct']}%" for m in bear_m],
+                                            textposition="bottom center",
+                                            textfont=dict(color="#ef4444", size=9),
+                                            showlegend=False
+                                        ), row=r_idx, col=1)
+
                                 if res_wedge["wedge_valido"]:
                                     colore_w = "#22c55e" if res_wedge["breakout_marubozu"] else "#38bdf8"
                                     fig.add_trace(grp.Scatter(x=res_wedge["x_dates"], y=res_wedge["upper_y"], mode="lines", line=dict(color=colore_w, width=2, dash="dashdot"), name="Wedge Upper", showlegend=False), row=r_idx, col=1)
@@ -771,24 +821,55 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                                 bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.4)",
                                 borderwidth=1.5, borderpad=8, font=dict(color="white", size=10)
                             )
-
                         # ==========================================
                         # --- TAB 1: TRE POC SCANNER (PARTE 6/6) ---
                         # ==========================================
-                        df_recent_ind = df_c.tail(180 if tf_attivo == "1wk" else 365)
+                        # Allinea la finestra degli indicatori a df3 così lo zoom sull'asse X è sincronizzato al 100%
+                        df_recent_ind = df3.copy()
+
+                        # Riga 4: RSI (14)
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["RSI"], mode="lines", name="RSI", line=dict(color="#a855f7", width=2)), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=75, y1=75, line=dict(color="rgba(239, 68, 68, 0.4)", width=1.5, dash="dot"), row=4, col=1)
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=25, y1=25, line=dict(color="rgba(34, 197, 94, 0.4)", width=1.5, dash="dot"), row=4, col=1)
+
+                        # Riga 5: ATR (14)
                         fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["ATR"], mode="lines", name="ATR", line=dict(color="#10b981", width=2)), row=5, col=1)
-                        
-                        fig.update_layout(template="plotly_dark", dragmode="pan", xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, xaxis4_rangeslider_visible=False, xaxis5_rangeslider_visible=False, height=2000, showlegend=False)
+
+                        # Riga 6: Z-Score + Media Mobile 9 Periodi (Arancione)
+                        fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["Z_Score"], mode="lines", name="Z-Score", line=dict(color="#38bdf8", width=1.8)), row=6, col=1)
+                        fig.add_trace(grp.Scatter(x=df_recent_ind.index, y=df_recent_ind["Z_Score_MA9"], mode="lines", name="SMA 9 Z-Score", line=dict(color="#f59e0b", width=1.6)), row=6, col=1)
+                        fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=2.0, y1=2.0, line=dict(color="#22c55e", width=1.2, dash="dash"), row=6, col=1)
+                        fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=0.0, y1=0.0, line=dict(color="rgba(255, 255, 255, 0.25)", width=1), row=6, col=1)
+                        fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=-2.0, y1=-2.0, line=dict(color="#ef4444", width=1.2, dash="dash"), row=6, col=1)
+
+                        # Sincronizza lo zoom/pan dell'asse X tra Profilo Recente (row 3) e tutti gli indicatori (rows 4, 5, 6)
+                        fig.update_xaxes(matches="x3", row=4, col=1)
+                        fig.update_xaxes(matches="x3", row=5, col=1)
+                        fig.update_xaxes(matches="x3", row=6, col=1)
+
+                        fig.update_layout(
+                            template="plotly_dark",
+                            dragmode="pan",
+                            xaxis_rangeslider_visible=False,
+                            xaxis2_rangeslider_visible=False,
+                            xaxis3_rangeslider_visible=False,
+                            xaxis4_rangeslider_visible=False,
+                            xaxis5_rangeslider_visible=False,
+                            xaxis6_rangeslider_visible=False,
+                            height=2300,
+                            showlegend=False
+                        )
                         fig.update_xaxes(fixedrange=False)
                         fig.update_yaxes(fixedrange=False)
-                        st.plotly_chart(fig, use_container_width=True, key=f"chart_{ticker}", config={'scrollZoom': True})
+                        st.plotly_chart(
+                            fig,
+                            use_container_width=True,
+                            key=f"chart_{ticker}",
+                            config={"scrollZoom": True, "displayModeBar": True}
+                        )
 
                     else: 
                         st.warning(f"Dati storici insufficienti per {ticker}.")
-
     
 # ==============================================================================
 # TAB 19: TRADINGVIEW PRO QUANTITATIVO (PARTE 1/5 - CONTROLLI & STRUMENTI)
