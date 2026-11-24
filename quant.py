@@ -967,7 +967,7 @@ if scelta_modulo == "🧪 TradingView Pro":
         if not gh_token or not gh_repo:
             return False, "Variabili GITHUB_TOKEN o GITHUB_REPO mancanti nei Secrets/env."
 
-        url_api = f"https://github.com/{gh_repo}/contents/{percorso_file}"
+        url_api = f"https://github.com{gh_repo.strip('/')}/contents/{percorso_file}"
         headers = {"Authorization": f"token {gh_token}", "Accept": "application/vnd.github.v3+json"}
 
         sha_esistente = None
