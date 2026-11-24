@@ -723,8 +723,8 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                                                 miglior_data_swing = data_sw
                                                 
                                     if miglior_data_swing is None and punti_swing_lh:
-                                        punti_swing_lh.sort(key=lambda x: x, reverse=True)
-                                        miglior_data_swing, miglior_val_swing = punti_swing_lh
+                                        punti_swing_lh.sort(key=lambda x: x[1], reverse=True)
+                                        miglior_data_swing, miglior_val_swing = punti_swing_lh[0]
                                         dist_giorni = (miglior_data_swing - date_max_assoluto).days
                                         if dist_giorni > 0:
                                             pendenza_ottimale = (miglior_val_swing - val_max_assoluto) / dist_giorni
@@ -744,6 +744,7 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                                             ),
                                             row=r_idx, col=1
                                         )
+
                             # ==========================================
                             # --- TAB 1: TRE POC SCANNER (PARTE 5/6) ---
                             # ==========================================
