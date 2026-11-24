@@ -505,7 +505,8 @@ if scelta_modulo in descrizioni_moduli:
 if scelta_modulo == "📁 Analisi Triple-POC":
 
     st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Indicatori")
-        with st.expander("📖 Guida Operativa: Come Funziona e Come Leggere il Triple-POC Scanner", expanded=False):
+    
+    with st.expander("📖 Guida Operativa: Come Funziona e Come Leggere il Triple-POC Scanner", expanded=False):
         st.markdown("""
         ### 🎯 A cosa serve questo modulo?
         Il prezzo si muove da un'area di equilibrio volumetrico all'altra. Analizzare un solo **Point of Control (POC)** può ingannare perché un livello forte nel breve periodo potrebbe trovarsi subito sotto una resistenza volumetrica storica. Questo modulo risolve il problema affiancando **3 orizzonti temporali**:
