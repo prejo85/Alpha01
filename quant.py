@@ -674,6 +674,7 @@ if scelta_modulo == "🧪 TradingView Pro":
         cov_z = sxy / n_z - (mx * my)
         std_res = np.sqrt(np.clip(vy - (2 * m_z * cov_z) + (m_z**2 * vx), 1e-5, None))
         df_tv["Z_Score"] = ((close_s - p_teo) / std_res).fillna(0.0)
+        df_tv["Z_Score_MA9"] = df_tv["Z_Score"].rolling(9).mean()
     elif tv_sub_osc == "Forza Relativa vs Benchmark (RS)":
         df_b_rs = yf.download(tickers=tv_bench_rs, period=tv_per, interval=tv_tf, auto_adjust=False, multi_level_index=False, progress=False)
         if df_b_rs is not None and not df_b_rs.empty:
@@ -901,6 +902,7 @@ if scelta_modulo == "🧪 TradingView Pro":
         elif tv_sub_osc == "Z-Score (±2)":
             z_s = df_tv["Z_Score"]
             fig_tv.add_trace(grp.Scatter(x=df_tv.index, y=z_s, mode="lines", line=dict(color="#38bdf8", width=1.6), name="Z-Score"), row=curr_row, col=1)
+            fig_tv.add_trace(grp.Scatter(x=df_tv.index, y=df_tv["Z_Score_MA9"], mode="lines", line=dict(color="#f59e0b", width=1.5), name="SMA 9 Z-Score"), row=curr_row, col=1)
             fig_tv.add_hline(y=2.0, line_dash="dash", line_color="#22c55e", annotation_text="+2.0", row=curr_row, col=1)
             fig_tv.add_hline(y=0.0, line_dash="solid", line_color="rgba(255,255,255,0.2)", row=curr_row, col=1)
             fig_tv.add_hline(y=-2.0, line_dash="dash", line_color="#ef4444", annotation_text="-2.0", row=curr_row, col=1)
