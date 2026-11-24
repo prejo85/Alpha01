@@ -364,7 +364,8 @@ def rileva_wedge_e_marubozu(df_in, finestra=35, soglia_corpo_pct=75.0):
     res_default = {
         "wedge_valido": False, "breakout_marubozu": False,
         "x_dates": [], "upper_y": [], "lower_y": [],
-        "upper_oggi": 0.0, "pct_corpo": 0.0
+        "upper_oggi": 0.0, "pct_corpo": 0.0,
+        "marubozu_list": []
     }
     if df_in is None or len(df_in) < finestra:
         return res_default
@@ -373,6 +374,24 @@ def rileva_wedge_e_marubozu(df_in, finestra=35, soglia_corpo_pct=75.0):
     x_idx = np.arange(len(sub))
     highs = sub["High"].astype(float).values
     lows = sub["Low"].astype(float).values
+    opens = sub["Open"].astype(float).values
+    closes = sub["Close"].astype(float).values
+
+    maru_found = []
+    for k in range(len(sub)):
+        rng = highs[k] - lows[k]
+        if rng > 0:
+            body = abs(closes[k] - opens[k])
+            pct = (body / rng) * 100.0
+            if pct >= soglia_corpo_pct:
+                is_bull = closes[k] > opens[k]
+                maru_found.append({
+                    "date": sub.index[k],
+                    "price": highs[k] if is_bull else lows[k],
+                    "is_bull": is_bull,
+                    "pct": round(pct, 1)
+                })
+    res_default["marubozu_list"] = maru_found
 
     m_up, q_up = np.polyfit(x_idx[:-1], highs[:-1], 1)
     m_low, q_low = np.polyfit(x_idx[:-1], lows[:-1], 1)
@@ -381,29 +400,24 @@ def rileva_wedge_e_marubozu(df_in, finestra=35, soglia_corpo_pct=75.0):
         upper_line = m_up * x_idx + q_up
         lower_line = m_low * x_idx + q_low
 
-        o_last = float(sub["Open"].iloc[-1])
-        c_last = float(sub["Close"].iloc[-1])
-        h_last = float(sub["High"].iloc[-1])
-        l_last = float(sub["Low"].iloc[-1])
-
-        range_c = max(1e-6, h_last - l_last)
-        corpo_c = abs(c_last - o_last)
-        pct_corpo = round((corpo_c / range_c) * 100.0, 1)
-
+        o_last, c_last = float(opens[-1]), float(closes[-1])
+        h_last, l_last = float(highs[-1]), float(lows[-1])
+        pct_last = round((abs(c_last - o_last) / max(1e-6, h_last - l_last)) * 100.0, 1)
         upper_oggi = float(upper_line[-1])
-        is_breakout = (c_last > o_last) and (c_last > upper_oggi) and (pct_corpo >= soglia_corpo_pct)
+        is_breakout = (c_last > o_last) and (c_last > upper_oggi) and (pct_last >= soglia_corpo_pct)
 
-        return {
+        res_default.update({
             "wedge_valido": True,
             "breakout_marubozu": is_breakout,
             "x_dates": sub.index.tolist(),
             "upper_y": upper_line.tolist(),
             "lower_y": lower_line.tolist(),
             "upper_oggi": upper_oggi,
-            "pct_corpo": pct_corpo
-        }
+            "pct_corpo": pct_last
+        })
 
     return res_default
+
 
 # ==============================================================================
 # STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
@@ -448,13 +462,16 @@ st.title(f"{scelta_modulo}")
 # ==============================================================================
 # DISCOVERY COMPONENT: NOTE DI ARCHITETTURA E SCOPO OPERATIVO DEL MODULO SELEZIONATO
 # ==============================================================================
-descrizioni_moduli = {
+descrizioni_moduli = {        
+    
     "📁 Analisi Triple-POC": (
-        "**Scopo Operativo & Architettura:** Scarica i dati dell'asset selezionato e calcola il "
-        "Volume Profile (POC, VAH, VAL) su tre orizzonti temporali (storico globale, dall'ATH e recente "
-        "a scelta). Genera rispettivi sottoriquadri grafici complessi a assi temporali sincronizzati, "
-        "indicatori dinamici di momentum e volatilità (RSI, ATR, EMA200) e proietta le linee di trend strutturali sui massimi."
+        "**Scopo Operativo & Architettura:** Motore istituzionale di analisi volumetrica multi-orizzonte che confronta "
+        "simultaneamente tre profili di volume (**Storico Completo**, **Dall'ATH** e **Finestra Recente 3M/6M/9M**) per isolare "
+        "i veri nodi di liquidità (**POC**, **VAH**, **VAL**). Integra calcolo automatico di **Entry, Stop Loss e Take Profit (R:R 1:2 su ATR 14)**, "
+        "trendline dinamica sui massimi decrescenti, riconoscimento pattern **Falling Wedge + candele Marubozu** e pannelli sincronizzati "
+        "di **RSI (14)**, **ATR (14)** e **Z-Score (50) con SMA 9**."
     ),
+
 
         "🧪 TradingView Pro Lab (Test)": (
         "**Scopo Operativo & Architettura:** Workstation grafica quantitativa multi-timeframe (15m–1M) "
@@ -488,6 +505,31 @@ if scelta_modulo in descrizioni_moduli:
 if scelta_modulo == "📁 Analisi Triple-POC":
 
     st.subheader("📊 Analisi Grafica Avanzata Volume Profile & Indicatori")
+        with st.expander("📖 Guida Operativa: Come Funziona e Come Leggere il Triple-POC Scanner", expanded=False):
+        st.markdown("""
+        ### 🎯 A cosa serve questo modulo?
+        Il prezzo si muove da un'area di equilibrio volumetrico all'altra. Analizzare un solo **Point of Control (POC)** può ingannare perché un livello forte nel breve periodo potrebbe trovarsi subito sotto una resistenza volumetrica storica. Questo modulo risolve il problema affiancando **3 orizzonti temporali**:
+        1. **Profilo Generale (Storico Completo):** Mostra dove i grandi capitali hanno scambiato di più in tutta la vita del titolo (supporti/resistenze macro strutturali).
+        2. **Profilo Dall'ATH (All-Time High):** Isola i volumi accumulati *dopo* il massimo assoluto, rivelando dove sono intrappolati i compratori o dove si sta formando la nuova base di riaccumulo.
+        3. **Profilo Recente (3 / 6 / 9 Mesi):** Fotografa l'equilibrio attuale di breve-medio periodo per calibrare il timing d'ingresso.
+
+        ---
+
+        ### ⚙️ Come si usa (Flusso Operativo)
+        1. **Seleziona Paniere o Ticker:** Scegli un indice preimpostato (es. *FTSE MIB*, *NASDAQ 100*, *Crypto*) oppure scrivi i simboli separati da virgola nella casella di testo.
+        2. **Imposta Orizzonte & Timeframe:** Scegli l'ampiezza del 3° profilo (`3`, `6` o `9 Mesi`) e il timeframe (`Daily` per swing trading, `Weekly` per posizione).
+        3. **Filtra i Livelli:** Attiva o nascondi POC, Value Area (`VAH/VAL`), Bande di Bollinger, Trendline sui massimi e zone `SL/TP` (calcolate automaticamente con **Stop Loss a 1.5x ATR** e **Take Profit a 3.0x ATR**, rapporto **1:2**).
+        4. **Naviga i Grafici:** Usa la rotellina del mouse al centro per zoomare, oppure direttamente sugli assi **X** (date sincronizzate) e **Y** (prezzi).
+
+        ---
+
+        ### 🧠 Perché abbiamo inserito **Falling Wedge** e **Candele Marubozu**?
+        Nel trading quantitativo sui volumi, **il livello (POC) ti dice *dove* entrare, mentre il pattern + la candela ti dicono *quando* entrare**, filtrando i falsi segnali:
+        * **📐 Falling Wedge (Cuneo Discendente):** È una figura di compressione in cui i massimi e i minimi scendono ma convergono (i venditori perdono progressivamente spinta). Quando il prezzo si trova vicino a un **POC** o alla **VAL** dentro un Falling Wedge, la probabilità di un'inversione rialzista esplosiva aumenta drasticamente.
+        * **🔥 Candela Marubozu (Corpo ≥ 75% del range):** Una Marubozu ha pochissime o zero ombre (*wick*): significa che i compratori (o venditori) hanno dominato l'intera seduta dall'apertura alla chiusura senza esitazioni.
+        * **🚀 La Sinergia (Wedge Breakout + Marubozu):** Molti breakout falliscono perché avvengono con volumi bassi o candele deboli con lunghe ombre superiori (*bull trap*). Richiedere che la rottura della trendline superiore del Wedge avvenga tramite una **Marubozu** certifica l'ingresso reale della liquidità istituzionale e convalida il segnale **LONG** sul Profilo Recente.
+        """)
+
     st.markdown("##### ⚙️ Personalizzazione Livelli Grafici")
     t_col1, t_col2, t_col3, t_col4 = st.columns(4)
     with t_col1:
@@ -773,9 +815,10 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                                 res_wedge = rileva_wedge_e_marubozu(df_s, finestra=35, soglia_corpo_pct=75.0)
                                 
                                 # Segnala tutte le candele Marubozu trovate nella finestra recente
-                                if res_wedge["marubozu_list"]:
-                                    bull_m = [m for m in res_wedge["marubozu_list"] if m["is_bull"]]
-                                    bear_m = [m for m in res_wedge["marubozu_list"] if not m["is_bull"]]
+                                maru_list = res_wedge.get("marubozu_list", [])
+                                if maru_list:
+                                    bull_m = [m for m in maru_list if m.get("is_bull")]
+                                    bear_m = [m for m in maru_list if not m.get("is_bull")]
                                     if bull_m:
                                         fig.add_trace(grp.Scatter(
                                             x=[m["date"] for m in bull_m],
@@ -799,15 +842,16 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                                             showlegend=False
                                         ), row=r_idx, col=1)
 
-                                if res_wedge["wedge_valido"]:
-                                    colore_w = "#22c55e" if res_wedge["breakout_marubozu"] else "#38bdf8"
-                                    fig.add_trace(grp.Scatter(x=res_wedge["x_dates"], y=res_wedge["upper_y"], mode="lines", line=dict(color=colore_w, width=2, dash="dashdot"), name="Wedge Upper", showlegend=False), row=r_idx, col=1)
-                                    fig.add_trace(grp.Scatter(x=res_wedge["x_dates"], y=res_wedge["lower_y"], mode="lines", line=dict(color=colore_w, width=2, dash="dashdot"), name="Wedge Lower", showlegend=False), row=r_idx, col=1)
+                                if res_wedge.get("wedge_valido", False):
+                                    is_brk = res_wedge.get("breakout_marubozu", False)
+                                    colore_w = "#22c55e" if is_brk else "#38bdf8"
+                                    fig.add_trace(grp.Scatter(x=res_wedge.get("x_dates", []), y=res_wedge.get("upper_y", []), mode="lines", line=dict(color=colore_w, width=2, dash="dashdot"), name="Wedge Upper", showlegend=False), row=r_idx, col=1)
+                                    fig.add_trace(grp.Scatter(x=res_wedge.get("x_dates", []), y=res_wedge.get("lower_y", []), mode="lines", line=dict(color=colore_w, width=2, dash="dashdot"), name="Wedge Lower", showlegend=False), row=r_idx, col=1)
                                     
-                                    if res_wedge["breakout_marubozu"]:
+                                    if is_brk and res_wedge.get("x_dates"):
                                         fig.add_annotation(
-                                            x=res_wedge["x_dates"][-1], y=res_wedge["upper_oggi"],
-                                            text=f"🚀 WEDGE BREAKOUT ({res_wedge['pct_corpo']}% Marubozu)",
+                                            x=res_wedge["x_dates"][-1], y=res_wedge.get("upper_oggi", 0.0),
+                                            text=f"🚀 WEDGE BREAKOUT ({res_wedge.get('pct_corpo', 0)}% Marubozu)",
                                             showarrow=True, arrowhead=2, arrowcolor="#22c55e", ax=-50, ay=-40,
                                             bgcolor="#22c55e", font=dict(color="white", size=10, weight="bold"),
                                             row=r_idx, col=1
