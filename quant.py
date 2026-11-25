@@ -11,6 +11,8 @@ from arch import arch_model
 from scipy import stats
 from scipy.signal import argrelextrema
 import os
+import re
+import base64
 from dotenv import load_dotenv
 from urllib.parse import quote
 
@@ -20,7 +22,6 @@ load_dotenv()
 
 st.set_page_config(layout="wide", page_title="POC Scanner Pro", page_icon="📐")
 
-import base64
 
 # ==============================================================================
 # --- SCHERMATA DI ACCESSO (LOGIN PAGE CON SFONDO PERSONALIZZATO) ---
@@ -34,6 +35,7 @@ if "ticker" in params_init and not st.session_state.get("url_gia_letto", False):
     tk_url = str(params_init["ticker"]).upper().strip()
     tf_url = str(params_init.get("tf", "Giornaliero (Daily)")).strip()
     st.session_state["menu_navigazione_moduli"] = "🧪 TradingView Pro"
+    st.session_state["tv_test_tk"] = tk_url
     st.session_state["can_tk"] = tk_url
     st.session_state["can_tf"] = tf_url
     st.session_state["url_gia_letto"] = True
@@ -153,7 +155,7 @@ st.markdown("""
         cursor: default !important;
     }
 
-    @import url('https://googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
+    @import url('https://googleapis.com');
     
     /* Sfondo principale con gradiente radiale scuro */
     .stApp { 
@@ -242,9 +244,6 @@ if "asset_type_index" not in st.session_state:
 T_ID = os.getenv("TELEGRAM_CHAT_ID", "2072895073")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
-
-import re
-
 # ==============================================================================
 # MOTORE UNIVERSALE PANIERI GIORNALIERI (USA, ITALIA, EUROPA, CRYPTO TOTAL 1-3)
 # ==============================================================================
@@ -275,7 +274,6 @@ ELENCO_PANIERI = [
     "Crypto — TOTAL 3 Altcoins (Rank 31–200)"
 ]
 
-import re
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def scarica_paniere_universale(categoria):
@@ -378,9 +376,6 @@ def scarica_paniere_universale(categoria):
     if "Crypto" in categoria:
         return FALLBACK_CRYPTO, f"📋 Listino Crypto{info_extra}"
     return FALLBACK_USA, f"📋 Listino USA{info_extra}"
-
-
-
 @st.cache_data(ttl=1800, show_spinner=False)
 def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
     risultati = []
@@ -397,61 +392,82 @@ def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
                 progress=False
             )
         except Exception:
-            continue
+            df_batch = pd.DataFrame()
 
         for tk in blocco:
+            dec = 4 if "-USD" in tk else 2
             try:
+                if df_batch.empty:
+                    raise ValueError("Batch vuoto")
+
                 if isinstance(df_batch.columns, pd.MultiIndex):
                     if tk not in df_batch.columns.get_level_values(0):
-                        continue
-                    df_t = df_batch[tk].dropna(subset=["Close", "High", "Low", "Volume"])
+                        raise ValueError("Ticker assente")
+                    df_t = df_batch[tk].dropna(subset=["Close", "High", "Low"])
                 else:
-                    df_t = df_batch.dropna(subset=["Close", "High", "Low", "Volume"])
+                    df_t = df_batch.dropna(subset=["Close", "High", "Low"])
 
-                if len(df_t) < 40:
-                    continue
+                if len(df_t) < 5:
+                    raise ValueError("Poche candele")
+
+                if "Volume" not in df_t.columns or df_t["Volume"].fillna(0).sum() <= 0:
+                    df_t = df_t.copy()
+                    df_t["Volume"] = 1.0
 
                 p_att = float(df_t["Close"].iloc[-1])
                 d_ath = df_t["High"].idxmax()
-                df_ath = df_t.loc[d_ath:] if len(df_t.loc[d_ath:]) >= 15 else df_t.tail(15)
-                df_rec = df_t.tail(giorni_recenti)
+                df_ath = df_t.loc[d_ath:] if len(df_t.loc[d_ath:]) >= 5 else df_t.tail(min(15, len(df_t)))
+                df_rec = df_t.tail(min(giorni_recenti, len(df_t)))
 
                 poc_1, _, _, _, _ = calc_vp(df_t, div=100)
                 poc_2, _, _, _, _ = calc_vp(df_ath, div=80)
                 poc_3, _, _, _, _ = calc_vp(df_rec, div=80)
 
-                if None in (poc_1, poc_2, poc_3):
-                    continue
+                poc_1 = poc_1 if poc_1 is not None else p_att
+                poc_2 = poc_2 if poc_2 is not None else p_att
+                poc_3 = poc_3 if poc_3 is not None else p_att
 
-                dist_poc3_pct = ((p_att - poc_3) / poc_3) * 100.0
+                d1_pct = round(((p_att - poc_1) / poc_1) * 100.0, 2) if poc_1 > 0 else 0.0
+                d2_pct = round(((p_att - poc_2) / poc_2) * 100.0, 2) if poc_2 > 0 else 0.0
+                d3_pct = round(((p_att - poc_3) / poc_3) * 100.0, 2) if poc_3 > 0 else 0.0
+
                 allineamento = (
-                    "🟢 FULL LONG" if (p_att > poc_1 and p_att > poc_2 and p_att > poc_3)
+                    "🟢 FULL LONG" if (p_att >= poc_1 and p_att >= poc_2 and p_att >= poc_3)
                     else "🔴 FULL SHORT" if (p_att < poc_1 and p_att < poc_2 and p_att < poc_3)
                     else "🟡 MISTO"
                 )
-                dec = 4 if "-USD" in tk else 2
                 risultati.append({
                     "Ticker": tk,
                     "Prezzo": round(p_att, dec),
                     "POC Storico": round(poc_1, dec),
+                    "Dist. Storico %": d1_pct,
                     "POC ATH": round(poc_2, dec),
+                    "Dist. ATH %": d2_pct,
                     "POC Recente": round(poc_3, dec),
-                    "Dist. POC Recente %": round(dist_poc3_pct, 2),
+                    "Dist. Recente %": d3_pct,
                     "Regime 3-POC": allineamento
                 })
             except Exception:
-                continue
+                risultati.append({
+                    "Ticker": tk,
+                    "Prezzo": None,
+                    "POC Storico": None,
+                    "Dist. Storico %": None,
+                    "POC ATH": None,
+                    "Dist. ATH %": None,
+                    "POC Recente": None,
+                    "Dist. Recente %": None,
+                    "Regime 3-POC": "⚪ N/D (Delistato)"
+                })
 
     return pd.DataFrame(risultati)
-
-
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     if not BOT_TOKEN:
         return False
     payload = {"chat_id": int(chat_id), "text": str(testo_messaggio), "parse_mode": "HTML", "disable_web_page_preview": False}
     try:
         # PROTEZIONE: URL composto dinamicamente usando la variabile d'ambiente
-        url_pulito = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        url_pulito = f"https://telegram.org{BOT_TOKEN}/sendMessage"
         res = requests.post(url_pulito, data=json.dumps(payload), headers=TESTA_INTERNET, timeout=12)
         return res.status_code == 200
     except Exception:
@@ -545,7 +561,8 @@ def rileva_wedge_e_marubozu(df_in, finestra=35, soglia_corpo_pct=75.0):
 # STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
 # ==============================================================================
 with st.sidebar:
-    st.image("logo_fmjp.png", use_container_width=True)
+    if os.path.exists("logo_fmjp.png"):
+        st.image("logo_fmjp.png", use_container_width=True)
     st.markdown("## 📺 Seleziona l'analisi che vuoi approfondire:")
     st.markdown("🤖 **Menu Navigazione Moduli**")
 
@@ -595,7 +612,7 @@ descrizioni_moduli = {
     ),
 
 
-        "🧪 TradingView Pro Lab (Test)": (
+        "🧪 TradingView Pro": (
         "**Scopo Operativo & Architettura:** Workstation grafica quantitativa multi-timeframe (15m–1M) "
         "con barra contesto in tempo reale (**Esponente di Hurst**, **ATR 14**, **RVOL** e **Calendario Earnings**). "
         "Integra indicatori sovrapponibili (EMA 20/50/100/200, Bande di Bollinger, VWAP, Swing High/Low), "
