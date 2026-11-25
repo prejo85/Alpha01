@@ -264,8 +264,7 @@ ELENCO_PANIERI = [
 @st.cache_data(ttl=86400, show_spinner=False)
 def scarica_paniere_universale(categoria):
     headers_std = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
 
     try:
@@ -293,39 +292,63 @@ def scarica_paniere_universale(categoria):
                 if len(selezionati) > 20:
                     return ",".join(selezionati), f"🌐 Live NASDAQ ({len(selezionati)} titoli)"
 
-        # 2. ITALIA & EUROPA (TradingView Scanner -> Suffissi Yahoo)
-        elif categoria.startswith("Italia —") or categoria.startswith("Europa —"):
-            headers_tv = {
-                **headers_std,
-                "Content-Type": "application/json",
-                "Origin": "https://tradingview.com",
-                "Referer": "https://tradingview.com/"
-            }
-            mercati = [("italy", ".MI")] if categoria.startswith("Italia —") else [
-                ("germany", ".DE"), ("france", ".PA"), ("netherlands", ".AS"), ("spain", ".MC"), ("italy", ".MI")
+        # 2. ITALIA (FTSE MIB + FTSE Italia Mid Cap + Small Cap via Wikipedia)
+        elif categoria.startswith("Italia —"):
+            pagine_it = [
+                "https://wikipedia.org",
+                "https://wikipedia.org",
+                "https://wikipedia.org"
+            ]
+            tutti_it = []
+            for url_w in pagine_it:
+                try:
+                    resp_w = requests.get(url_w, headers=headers_std, timeout=10)
+                    if resp_w.status_code == 200:
+                        tabelle = pd.read_html(resp_w.text)
+                        for df_t in tabelle:
+                            for col_nome in df_t.columns:
+                                if str(col_nome).lower() in ("ticker", "symbol", "code", "epic"):
+                                    for val in df_t[col_nome].dropna().tolist():
+                                        tk_s = str(val).strip().upper()
+                                        if tk_s.endswith(".MI"):
+                                            tutti_it.append(tk_s)
+                                        elif tk_s.isalnum() and 2 <= len(tk_s) <= 6:
+                                            tutti_it.append(f"{tk_s}.MI")
+                except Exception:
+                    continue
+            tutti_it = list(dict.fromkeys(tutti_it))
+            if len(tutti_it) >= 35:
+                return ",".join(tutti_it), f"🌐 Live Borsa Italiana ({len(tutti_it)} titoli .MI)"
+
+        # 3. EUROPA (EURO STOXX 50 + DAX + CAC 40 via Wikipedia)
+        elif categoria.startswith("Europa —"):
+            pagine_eu = [
+                ("https://wikipedia.org", ""),
+                ("https://wikipedia.org", ".DE"),
+                ("https://wikipedia.org", ".PA")
             ]
             tutti_eu = []
-            for mkt, suffix in mercati:
-                url_tv = f"https://tradingview.com{mkt}/scan"
-                payload = {
-                    "filter": [{"left": "type", "operation": "equal", "right": "stock"}],
-                    "options": {"lang": "en"},
-                    "symbols": {"query": {"types": []}, "tickers": []},
-                    "columns": ["name", "market_cap_basic"],
-                    "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                    "range": [0, 250 if categoria.startswith("Italia —") else 60]
-                }
-                res = requests.post(url_tv, json=payload, headers=headers_tv, timeout=12)
-                if res.status_code == 200:
-                    for item in res.json().get("data", []):
-                        d_arr = item.get("d", [])
-                        if isinstance(d_arr, list) and len(d_arr) > 0 and d_arr:
-                            tk_clean = str(d_arr).replace(".", "-").strip()
-                            tutti_eu.append(f"{tk_clean}{suffix}")
-            if len(tutti_eu) > 20:
-                return ",".join(tutti_eu), f"🌐 Live Scanner EU ({len(tutti_eu)} titoli)"
+            for url_w, def_suf in pagine_eu:
+                try:
+                    resp_w = requests.get(url_w, headers=headers_std, timeout=10)
+                    if resp_w.status_code == 200:
+                        tabelle = pd.read_html(resp_w.text)
+                        for df_t in tabelle:
+                            for col_nome in df_t.columns:
+                                if str(col_nome).lower() in ("ticker", "symbol", "code"):
+                                    for val in df_t[col_nome].dropna().tolist():
+                                        tk_s = str(val).strip().upper()
+                                        if "." in tk_s and len(tk_s) <= 10:
+                                            tutti_eu.append(tk_s)
+                                        elif def_suf and tk_s.isalnum() and 2 <= len(tk_s) <= 6:
+                                            tutti_eu.append(f"{tk_s}{def_suf}")
+                except Exception:
+                    continue
+            tutti_eu = list(dict.fromkeys(tutti_eu))
+            if len(tutti_eu) >= 40:
+                return ",".join(tutti_eu), f"🌐 Live Europa ({len(tutti_eu)} titoli)"
 
-        # 3. CRYPTO TOTAL 1, TOTAL 2 & TOTAL 3 (Top 220 CoinGecko -> Yahoo -USD)
+        # 4. CRYPTO TOTAL 1, TOTAL 2 & TOTAL 3 (Top 220 CoinGecko -> Yahoo -USD)
         elif categoria.startswith("Crypto —"):
             url_cg = "https://coingecko.com"
             params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 220, "page": 1}
@@ -348,6 +371,7 @@ def scarica_paniere_universale(categoria):
     if "Europa" in categoria: return FALLBACK_EU, "📋 Fallback Europa"
     if "Crypto" in categoria: return FALLBACK_CRYPTO, "📋 Fallback Crypto"
     return FALLBACK_USA, "📋 Fallback USA"
+
 
 
 
