@@ -275,93 +275,109 @@ ELENCO_PANIERI = [
     "Crypto — TOTAL 3 Altcoins (Rank 31–200)"
 ]
 
-@st.cache_data(ttl=1800, show_spinner=False)
-def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
-    risultati = []
-    for i in range(0, len(lista_tickers), 40):
-        blocco = lista_tickers[i:i + 40]
-        try:
-            df_batch = yf.download(
-                tickers=blocco,
-                period="5y" if timeframe == "1d" else "max",
-                interval=timeframe,
-                group_by="ticker",
-                auto_adjust=False,
-                threads=True,
-                progress=False
-            )
-        except Exception:
-            df_batch = pd.DataFrame()
+import re
 
-        for tk in blocco:
-            dec = 4 if "-USD" in tk else 2
-            try:
-                if df_batch.empty:
-                    raise ValueError("Batch vuoto")
+@st.cache_data(ttl=86400, show_spinner=False)
+def scarica_paniere_universale(categoria):
+    headers_std = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
+    motivo_err = ""
 
-                if isinstance(df_batch.columns, pd.MultiIndex):
-                    if tk not in df_batch.columns.get_level_values(0):
-                        raise ValueError("Ticker assente")
-                    df_t = df_batch[tk].dropna(subset=["Close", "High", "Low"])
+    try:
+        # 1. USA (Large, Mid o Small Cap via NASDAQ Screener ufficiale)
+        if categoria.startswith("USA —"):
+            url_us = "https://nasdaq.com"
+            res = requests.get(url_us, headers=headers_std, timeout=15)
+            if res.status_code == 200:
+                rows = res.json().get("data", {}).get("rows", [])
+                selezionati = []
+                for r in rows:
+                    sym = str(r.get("symbol", "")).strip()
+                    if not sym or "^" in sym or "/" in sym:
+                        continue
+                    mc_raw = str(r.get("marketCap", "0")).replace("$", "").replace(",", "").strip()
+                    mc = float(mc_raw) if mc_raw.replace(".", "", 1).isdigit() else 0.0
+
+                    if "Large Cap" in categoria and mc >= 10_000_000_000:
+                        selezionati.append(sym.replace(".", "-"))
+                    elif "Mid Cap" in categoria and 2_000_000_000 <= mc < 10_000_000_000:
+                        selezionati.append(sym.replace(".", "-"))
+                    elif "Small Cap" in categoria and 300_000_000 <= mc < 2_000_000_000:
+                        selezionati.append(sym.replace(".", "-"))
+
+                if len(selezionati) > 20:
+                    return ",".join(selezionati), f"🌐 Live NASDAQ ({len(selezionati)} titoli)"
+            motivo_err = f"HTTP {res.status_code}"
+
+        # 2. ITALIA (FTSE MIB + FTSE Italia Mid Cap + Small Cap via Regex su Wikipedia)
+        elif categoria.startswith("Italia —"):
+            pagine_it = [
+                "https://wikipedia.org",
+                "https://wikipedia.org",
+                "https://wikipedia.org"
+            ]
+            tutti_it = []
+            for url_w in pagine_it:
+                resp_w = requests.get(url_w, headers=headers_std, timeout=10)
+                if resp_w.status_code == 200:
+                    trovati = re.findall(r"\b([A-Z0-9]{2,6}\.MI)\b", resp_w.text)
+                    tutti_it.extend(trovati)
                 else:
-                    df_t = df_batch.dropna(subset=["Close", "High", "Low"])
+                    motivo_err = f"Wiki HTTP {resp_w.status_code}"
 
-                if len(df_t) < 5:
-                    raise ValueError("Poche candele")
+            tutti_it = list(dict.fromkeys(tutti_it))
+            if len(tutti_it) >= 35:
+                return ",".join(tutti_it), f"🌐 Live Borsa Italiana ({len(tutti_it)} titoli .MI)"
 
-                # Se Volume è mancante o zero, usa volume fittizio = 1 per non scartare il titolo
-                if "Volume" not in df_t.columns or df_t["Volume"].fillna(0).sum() <= 0:
-                    df_t = df_t.copy()
-                    df_t["Volume"] = 1.0
+        # 3. EUROPA (EURO STOXX 50 + DAX + CAC 40 via Regex su Wikipedia)
+        elif categoria.startswith("Europa —"):
+            pagine_eu = [
+                "https://wikipedia.org",
+                "https://wikipedia.org",
+                "https://wikipedia.org"
+            ]
+            tutti_eu = []
+            for url_w in pagine_eu:
+                resp_w = requests.get(url_w, headers=headers_std, timeout=10)
+                if resp_w.status_code == 200:
+                    trovati = re.findall(r"\b([A-Z0-9]{2,6}\.(?:DE|PA|AS|MC|MI))\b", resp_w.text)
+                    tutti_eu.extend(trovati)
+                else:
+                    motivo_err = f"Wiki HTTP {resp_w.status_code}"
 
-                p_att = float(df_t["Close"].iloc[-1])
-                d_ath = df_t["High"].idxmax()
-                df_ath = df_t.loc[d_ath:] if len(df_t.loc[d_ath:]) >= 5 else df_t.tail(min(15, len(df_t)))
-                df_rec = df_t.tail(min(giorni_recenti, len(df_t)))
+            tutti_eu = list(dict.fromkeys(tutti_eu))
+            if len(tutti_eu) >= 40:
+                return ",".join(tutti_eu), f"🌐 Live Europa ({len(tutti_eu)} titoli)"
 
-                poc_1, _, _, _, _ = calc_vp(df_t, div=100)
-                poc_2, _, _, _, _ = calc_vp(df_ath, div=80)
-                poc_3, _, _, _, _ = calc_vp(df_rec, div=80)
+        # 4. CRYPTO TOTAL 1, TOTAL 2 & TOTAL 3 (Top 220 CoinGecko -> Yahoo -USD)
+        elif categoria.startswith("Crypto —"):
+            url_cg = "https://coingecko.com"
+            params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 220, "page": 1}
+            res = requests.get(url_cg, params=params, headers=headers_std, timeout=12)
+            if res.status_code == 200:
+                stable = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "STETH", "WSTETH", "WBTC", "BUSD", "USDS"}
+                coins = [
+                    f"{c['symbol'].upper()}-USD"
+                    for c in res.json()
+                    if c.get("symbol", "").upper() not in stable
+                ]
+                lista_c = coins[:30] if "TOTAL 1 & 2" in categoria else coins[30:200]
+                if len(lista_c) >= 15:
+                    return ",".join(lista_c), f"🌐 Live CoinGecko ({len(lista_c)} crypto)"
+            motivo_err = f"CG HTTP {res.status_code}"
 
-                poc_1 = poc_1 if poc_1 is not None else p_att
-                poc_2 = poc_2 if poc_2 is not None else p_att
-                poc_3 = poc_3 if poc_3 is not None else p_att
+    except Exception as ex:
+        motivo_err = str(ex)[:40]
 
-                d1_pct = round(((p_att - poc_1) / poc_1) * 100.0, 2) if poc_1 > 0 else 0.0
-                d2_pct = round(((p_att - poc_2) / poc_2) * 100.0, 2) if poc_2 > 0 else 0.0
-                d3_pct = round(((p_att - poc_3) / poc_3) * 100.0, 2) if poc_3 > 0 else 0.0
-
-                allineamento = (
-                    "🟢 FULL LONG" if (p_att >= poc_1 and p_att >= poc_2 and p_att >= poc_3)
-                    else "🔴 FULL SHORT" if (p_att < poc_1 and p_att < poc_2 and p_att < poc_3)
-                    else "🟡 MISTO"
-                )
-                risultati.append({
-                    "Ticker": tk,
-                    "Prezzo": round(p_att, dec),
-                    "POC Storico": round(poc_1, dec),
-                    "Dist. Storico %": d1_pct,
-                    "POC ATH": round(poc_2, dec),
-                    "Dist. ATH %": d2_pct,
-                    "POC Recente": round(poc_3, dec),
-                    "Dist. Recente %": d3_pct,
-                    "Regime 3-POC": allineamento
-                })
-            except Exception:
-                # Non scarta il titolo: lo mantiene visibile nella lista come N/D (Delistato/Sospeso)
-                risultati.append({
-                    "Ticker": tk,
-                    "Prezzo": None,
-                    "POC Storico": None,
-                    "Dist. Storico %": None,
-                    "POC ATH": None,
-                    "Dist. ATH %": None,
-                    "POC Recente": None,
-                    "Dist. Recente %": None,
-                    "Regime 3-POC": "⚪ N/D (Delistato)"
-                })
-
-    return pd.DataFrame(risultati)
+    info_extra = f" ({motivo_err})" if motivo_err else ""
+    if "Italia" in categoria:
+        return FALLBACK_ITA, f"📋 Listino Borsa Italiana ({len(FALLBACK_ITA.split(','))} titoli .MI){info_extra}"
+    if "Europa" in categoria:
+        return FALLBACK_EU, f"📋 Listino Europa{info_extra}"
+    if "Crypto" in categoria:
+        return FALLBACK_CRYPTO, f"📋 Listino Crypto{info_extra}"
+    return FALLBACK_USA, f"📋 Listino USA{info_extra}"
 
 
 
