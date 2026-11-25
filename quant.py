@@ -775,47 +775,6 @@ if scelta_modulo == "📁 Analisi Triple-POC":
         df_raw_poc = st.session_state["df_scan_poc_cache"].copy()
         st.success(f"✅ Visualizzati tutti i **{len(df_raw_poc)} titoli** ({st.session_state.get('scan_paniere_nome', '')})!")
 
-        f_col1, f_col2 = st.columns(2)
-        max_dist_pct = st.slider("📏 Distanza massima dal POC selezionato (%):", min_value=1.0, max_value=100.0, value=15.0, step=1.0, key="sl_max_dist_poc")
-        df_filtrato = df_filtrato[df_filtrato[col_dist].isna() | (df_filtrato[col_dist].abs() <= max_dist_pct)]
-
-        with f_col1:
-            filtro_poc_vista = st.selectbox(
-                "🎯 Quale POC vuoi visionare nella tabella:",
-                [
-                    "Tutti i 3 POC (Completo)",
-                    "1. Solo POC Storico (Generale)",
-                    "2. Solo POC Dall'ATH",
-                    "3. Solo POC Recente"
-                ],
-                key="sel_filtro_poc_vista"
-            )
-        with f_col2:
-            filtro_dir_poc = st.selectbox(
-                "🧭 Filtra Posizione Prezzo rispetto al POC:",
-                [
-                    "Tutti i titoli (inclusi N/D)",
-                    "🟢 Solo LONG (Prezzo sopra il POC)",
-                    "🔴 Solo SHORT (Prezzo sotto il POC)"
-                ],
-                key="sel_filtro_dir_poc"
-            )
-
-        # Selezione colonne e colonna di riferimento per ordinamento/filtro
-        if filtro_poc_vista == "1. Solo POC Storico (Generale)":
-            col_dist = "Dist. Storico %"
-            cols_show = ["Ticker", "Prezzo", "POC Storico", "Dist. Storico %", "Regime 3-POC"]
-        elif filtro_poc_vista == "2. Solo POC Dall'ATH":
-            col_dist = "Dist. ATH %"
-            cols_show = ["Ticker", "Prezzo", "POC ATH", "Dist. ATH %", "Regime 3-POC"]
-        elif filtro_poc_vista == "3. Solo POC Recente":
-            col_dist = "Dist. Recente %"
-            cols_show = ["Ticker", "Prezzo", "POC Recente", "Dist. Recente %", "Regime 3-POC"]
-        else:
-            col_dist = "Dist. Recente %"
-            cols_show = ["Ticker", "Prezzo", "POC Storico", "Dist. Storico %", "POC ATH", "Dist. ATH %", "POC Recente", "Dist. Recente %", "Regime 3-POC"]
-
-        # Protezione: se in session_state c'è ancora il formato vecchio della tabella, resetta
         # Protezione: se in session_state c'è ancora il formato vecchio della tabella, resetta
         if "Dist. Recente %" not in df_raw_poc.columns:
             del st.session_state["df_scan_poc_cache"]
@@ -851,7 +810,7 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                 key="sl_max_dist_poc"
             )
 
-        # 1. Prima definiamo col_dist e le colonne da mostrare
+        # 1. Selezione colonne e colonna di riferimento
         if filtro_poc_vista == "1. Solo POC Storico (Generale)":
             col_dist = "Dist. Storico %"
             cols_show = ["Ticker", "Prezzo", "POC Storico", "Dist. Storico %", "Regime 3-POC"]
@@ -865,20 +824,18 @@ if scelta_modulo == "📁 Analisi Triple-POC":
             col_dist = "Dist. Recente %"
             cols_show = ["Ticker", "Prezzo", "POC Storico", "Dist. Storico %", "POC ATH", "Dist. ATH %", "POC Recente", "Dist. Recente %", "Regime 3-POC"]
 
-        # 2. Poi creiamo df_filtrato e applichiamo i filtri
+        # 2. Creazione df_filtrato e applicazione filtri
         df_filtrato = df_raw_poc.copy()
         if filtro_dir_poc == "🟢 Solo LONG (Prezzo sopra il POC)":
             df_filtrato = df_filtrato[df_filtrato[col_dist].notna() & (df_filtrato[col_dist] >= 0)]
         elif filtro_dir_poc == "🔴 Solo SHORT (Prezzo sotto il POC)":
             df_filtrato = df_filtrato[df_filtrato[col_dist].notna() & (df_filtrato[col_dist] < 0)]
 
-        # Filtro per distanza massima % dal POC
         df_filtrato = df_filtrato[df_filtrato[col_dist].isna() | (df_filtrato[col_dist].abs() <= max_dist_pct)]
 
-        # 3. Ordina dal titolo più VICINO al POC al più lontano (senza sovrascriverlo dopo!)
+        # 3. Ordina dal titolo più VICINO al POC al più lontano
         df_filtrato["_dist_abs"] = df_filtrato[col_dist].abs()
         df_filtrato = df_filtrato.sort_values(by="_dist_abs", ascending=True, na_position="last").drop(columns=["_dist_abs"]).reset_index(drop=True)
-
 
         st.caption("💡 Clicca su una riga della tabella per inviare subito il titolo a **TradingView Pro** o ai **Grafici 3-POC**.")
         ev_tab_poc = st.dataframe(
