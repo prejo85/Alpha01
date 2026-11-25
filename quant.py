@@ -763,12 +763,10 @@ if scelta_modulo == "📁 Analisi Triple-POC":
         tf_label = st.selectbox("Timeframe Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)"], key="an_timeframe")
         tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_label]
 
-    max_scan_n = st.slider("Numero massimo asset da scansionare (ordinati per Market Cap):", min_value=20, max_value=500, value=100, step=20, key="an_max_scan")
-
     tickers_input = st.text_area("Tickers specifici (lascia vuoto per scansionare automaticamente il paniere selezionato):", value="", height=80, key=f"an_area_{paniere_selezionato}")
 
     if st.button("🌐 Scansiona Tutto il Paniere & Calcola i 3 POC", type="secondary", use_container_width=True):
-        lista_target = [t.strip().upper() for t in (tickers_input if tickers_input.strip() else ticker_caricati).split(",") if t.strip()][:max_scan_n]
+        lista_target = [t.strip().upper() for t in (tickers_input if tickers_input.strip() else ticker_caricati).split(",") if t.strip()]
         with st.spinner(f"Download batch e calcolo 3 POC su tutti i {len(lista_target)} asset ({paniere_selezionato})..."):
             st.session_state["df_scan_poc_cache"] = scansiona_poc_paniere(lista_target, timeframe=tf_attivo, giorni_recenti=g3)
             st.session_state["scan_paniere_nome"] = paniere_selezionato
