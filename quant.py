@@ -485,7 +485,7 @@ def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     payload = {"chat_id": int(chat_id), "text": str(testo_messaggio), "parse_mode": "HTML", "disable_web_page_preview": False}
     try:
         # PROTEZIONE: URL composto dinamicamente usando la variabile d'ambiente
-        url_pulito = f"https://telegram.org{BOT_TOKEN}/sendMessage"
+        url_pulito = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         res = requests.post(url_pulito, data=json.dumps(payload), headers=TESTA_INTERNET, timeout=12)
         return res.status_code == 200
     except Exception:
