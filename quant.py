@@ -263,13 +263,16 @@ ELENCO_PANIERI = [
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def scarica_paniere_universale(categoria):
-    headers = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
+    headers_std = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*"
+    }
 
     try:
         # 1. USA (Large, Mid o Small Cap via NASDAQ Screener ufficiale)
         if categoria.startswith("USA —"):
             url_us = "https://nasdaq.com"
-            res = requests.get(url_us, headers=headers, timeout=15)
+            res = requests.get(url_us, headers=headers_std, timeout=15)
             if res.status_code == 200:
                 rows = res.json().get("data", {}).get("rows", [])
                 selezionati = []
@@ -292,6 +295,12 @@ def scarica_paniere_universale(categoria):
 
         # 2. ITALIA & EUROPA (TradingView Scanner -> Suffissi Yahoo)
         elif categoria.startswith("Italia —") or categoria.startswith("Europa —"):
+            headers_tv = {
+                **headers_std,
+                "Content-Type": "application/json",
+                "Origin": "https://tradingview.com",
+                "Referer": "https://tradingview.com/"
+            }
             mercati = [("italy", ".MI")] if categoria.startswith("Italia —") else [
                 ("germany", ".DE"), ("france", ".PA"), ("netherlands", ".AS"), ("spain", ".MC"), ("italy", ".MI")
             ]
@@ -304,14 +313,15 @@ def scarica_paniere_universale(categoria):
                     "symbols": {"query": {"types": []}, "tickers": []},
                     "columns": ["name", "market_cap_basic"],
                     "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                    "range": [0, 180 if categoria.startswith("Italia —") else 60]
+                    "range": [0, 250 if categoria.startswith("Italia —") else 60]
                 }
-                res = requests.post(url_tv, json=payload, headers=headers, timeout=12)
+                res = requests.post(url_tv, json=payload, headers=headers_tv, timeout=12)
                 if res.status_code == 200:
                     for item in res.json().get("data", []):
                         d_arr = item.get("d", [])
-                        if len(d_arr) > 0 and d_arr:
-                            tutti_eu.append(f"{str(d_arr).replace('.', '-')}{suffix}")
+                        if isinstance(d_arr, list) and len(d_arr) > 0 and d_arr:
+                            tk_clean = str(d_arr).replace(".", "-").strip()
+                            tutti_eu.append(f"{tk_clean}{suffix}")
             if len(tutti_eu) > 20:
                 return ",".join(tutti_eu), f"🌐 Live Scanner EU ({len(tutti_eu)} titoli)"
 
@@ -319,7 +329,7 @@ def scarica_paniere_universale(categoria):
         elif categoria.startswith("Crypto —"):
             url_cg = "https://coingecko.com"
             params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 220, "page": 1}
-            res = requests.get(url_cg, params=params, headers=headers, timeout=12)
+            res = requests.get(url_cg, params=params, headers=headers_std, timeout=12)
             if res.status_code == 200:
                 stable = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "STETH", "WSTETH", "WBTC", "BUSD", "USDS"}
                 coins = [
@@ -338,6 +348,7 @@ def scarica_paniere_universale(categoria):
     if "Europa" in categoria: return FALLBACK_EU, "📋 Fallback Europa"
     if "Crypto" in categoria: return FALLBACK_CRYPTO, "📋 Fallback Crypto"
     return FALLBACK_USA, "📋 Fallback USA"
+
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
