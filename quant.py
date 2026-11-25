@@ -243,11 +243,25 @@ T_ID = os.getenv("TELEGRAM_CHAT_ID", "2072895073")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
 
+import re
+
 # ==============================================================================
 # MOTORE UNIVERSALE PANIERI GIORNALIERI (USA, ITALIA, EUROPA, CRYPTO TOTAL 1-3)
 # ==============================================================================
 FALLBACK_USA = "AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,BRK-B,JPM,V,AVGO,COST,NFLX,AMD,PLTR"
-FALLBACK_ITA = "UCG.MI,ISP.MI,ENI.MI,ENEL.MI,RACE.MI,STLAM.MI,G.MI,LDO.MI,PRY.MI,STMPA.MI,BAMI.MI,BPER.MI"
+FALLBACK_ITA = (
+    "A2A.MI,AMP.MI,AZM.MI,BAMI.MI,BC.MI,BMED.MI,BMPS.MI,BPER.MI,BPSO.MI,CPR.MI,DIA.MI,ENEL.MI,ENI.MI,ERG.MI,EVO.MI,"
+    "FBK.MI,G.MI,HER.MI,INW.MI,IP.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,"
+    "SGO.MI,SRG.MI,STLAM.MI,STMPA.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,ACE.MI,ADB.MI,AEF.MI,ALV.MI,ANIM.MI,AP.MI,ARN.MI,"
+    "ASC.MI,AST.MI,AT.MI,AVIO.MI,BDB.MI,BEC.MI,BF.MI,BFE.MI,BGN.MI,BIES.MI,BND.MI,BRE.MI,BSS.MI,CAI.MI,CAR.MI,"
+    "CE.MI,CEM.MI,CIR.MI,CLA.MI,CMB.MI,COV.MI,CSP.MI,DAL.MI,DAN.MI,DAT.MI,DBG.MI,DEA.MI,DEL.MI,DIG.MI,DLG.MI,"
+    "DOV.MI,ELN.MI,EM.MI,ENAV.MI,ENG.MI,EQU.MI,ES.MI,ETH.MI,EXAI.MI,EXPR.MI,FILA.MI,FIN.MI,FNM.MI,GABET.MI,GAR.MI,"
+    "GEF.MI,GPI.MI,GVS.MI,IG.MI,IGD.MI,ILL.MI,IND.MI,INT.MI,IRCE.MI,IRE.MI,ITM.MI,IVG.MI,JUVE.MI,LDB.MI,LIT.MI,"
+    "LUCE.MI,LVE.MI,MAIRE.MI,MARR.MI,MOL.MI,MON.MI,MS.MI,MT.MI,MTP.MI,NEWL.MI,NOE.MI,NR.MI,NVT.MI,OVS.MI,PHN.MI,"
+    "PIA.MI,PINF.MI,PLC.MI,PLT.MI,POL.MI,PRT.MI,RWAY.MI,SAB.MI,SAES.MI,SAL.MI,SAR.MI,SBS.MI,SER.MI,SES.MI,SFER.MI,"
+    "SIT.MI,SL.MI,SOL.MI,SOM.MI,SPM.MI,SRS.MI,SSL.MI,STAR7.MI,SWT.MI,TIP.MI,TGYM.MI,TISG.MI,TPRO.MI,TXT.MI,UNIR.MI,"
+    "US.MI,VAL.MI,VLA.MI,WIIT.MI,ZIGN.MI"
+)
 FALLBACK_EU = "ASML.AS,SAP.DE,MC.PA,SIE.DE,TTE.PA,OR.PA,SAN.MC,ALV.DE,AIR.PA,UCG.MI,ISP.MI,ENI.MI"
 FALLBACK_CRYPTO = "BTC-USD,ETH-USD,SOL-USD,BNB-USD,XRP-USD,ADA-USD,AVAX-USD,LINK-USD,DOT-USD,SUI-USD,NEAR-USD,APT-USD,INJ-USD,RENDER-USD,FET-USD"
 
@@ -266,6 +280,7 @@ def scarica_paniere_universale(categoria):
     headers_std = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
+    motivo_err = ""
 
     try:
         # 1. USA (Large, Mid o Small Cap via NASDAQ Screener ufficiale)
@@ -291,8 +306,9 @@ def scarica_paniere_universale(categoria):
 
                 if len(selezionati) > 20:
                     return ",".join(selezionati), f"🌐 Live NASDAQ ({len(selezionati)} titoli)"
+            motivo_err = f"HTTP {res.status_code}"
 
-        # 2. ITALIA (FTSE MIB + FTSE Italia Mid Cap + Small Cap via Wikipedia)
+        # 2. ITALIA (FTSE MIB + FTSE Italia Mid Cap + Small Cap via Regex su Wikipedia)
         elif categoria.startswith("Italia —"):
             pagine_it = [
                 "https://wikipedia.org",
@@ -301,49 +317,33 @@ def scarica_paniere_universale(categoria):
             ]
             tutti_it = []
             for url_w in pagine_it:
-                try:
-                    resp_w = requests.get(url_w, headers=headers_std, timeout=10)
-                    if resp_w.status_code == 200:
-                        tabelle = pd.read_html(resp_w.text)
-                        for df_t in tabelle:
-                            for col_nome in df_t.columns:
-                                if str(col_nome).lower() in ("ticker", "symbol", "code", "epic"):
-                                    for val in df_t[col_nome].dropna().tolist():
-                                        tk_s = str(val).strip().upper()
-                                        if tk_s.endswith(".MI"):
-                                            tutti_it.append(tk_s)
-                                        elif tk_s.isalnum() and 2 <= len(tk_s) <= 6:
-                                            tutti_it.append(f"{tk_s}.MI")
-                except Exception:
-                    continue
+                resp_w = requests.get(url_w, headers=headers_std, timeout=10)
+                if resp_w.status_code == 200:
+                    trovati = re.findall(r"\b([A-Z0-9]{2,6}\.MI)\b", resp_w.text)
+                    tutti_it.extend(trovati)
+                else:
+                    motivo_err = f"Wiki HTTP {resp_w.status_code}"
+
             tutti_it = list(dict.fromkeys(tutti_it))
             if len(tutti_it) >= 35:
                 return ",".join(tutti_it), f"🌐 Live Borsa Italiana ({len(tutti_it)} titoli .MI)"
 
-        # 3. EUROPA (EURO STOXX 50 + DAX + CAC 40 via Wikipedia)
+        # 3. EUROPA (EURO STOXX 50 + DAX + CAC 40 via Regex su Wikipedia)
         elif categoria.startswith("Europa —"):
             pagine_eu = [
-                ("https://wikipedia.org", ""),
-                ("https://wikipedia.org", ".DE"),
-                ("https://wikipedia.org", ".PA")
+                "https://wikipedia.org",
+                "https://wikipedia.org",
+                "https://wikipedia.org"
             ]
             tutti_eu = []
-            for url_w, def_suf in pagine_eu:
-                try:
-                    resp_w = requests.get(url_w, headers=headers_std, timeout=10)
-                    if resp_w.status_code == 200:
-                        tabelle = pd.read_html(resp_w.text)
-                        for df_t in tabelle:
-                            for col_nome in df_t.columns:
-                                if str(col_nome).lower() in ("ticker", "symbol", "code"):
-                                    for val in df_t[col_nome].dropna().tolist():
-                                        tk_s = str(val).strip().upper()
-                                        if "." in tk_s and len(tk_s) <= 10:
-                                            tutti_eu.append(tk_s)
-                                        elif def_suf and tk_s.isalnum() and 2 <= len(tk_s) <= 6:
-                                            tutti_eu.append(f"{tk_s}{def_suf}")
-                except Exception:
-                    continue
+            for url_w in pagine_eu:
+                resp_w = requests.get(url_w, headers=headers_std, timeout=10)
+                if resp_w.status_code == 200:
+                    trovati = re.findall(r"\b([A-Z0-9]{2,6}\.(?:DE|PA|AS|MC|MI))\b", resp_w.text)
+                    tutti_eu.extend(trovati)
+                else:
+                    motivo_err = f"Wiki HTTP {resp_w.status_code}"
+
             tutti_eu = list(dict.fromkeys(tutti_eu))
             if len(tutti_eu) >= 40:
                 return ",".join(tutti_eu), f"🌐 Live Europa ({len(tutti_eu)} titoli)"
@@ -363,16 +363,19 @@ def scarica_paniere_universale(categoria):
                 lista_c = coins[:30] if "TOTAL 1 & 2" in categoria else coins[30:200]
                 if len(lista_c) >= 15:
                     return ",".join(lista_c), f"🌐 Live CoinGecko ({len(lista_c)} crypto)"
+            motivo_err = f"CG HTTP {res.status_code}"
 
-    except Exception:
-        pass
+    except Exception as ex:
+        motivo_err = str(ex)[:40]
 
-    if "Italia" in categoria: return FALLBACK_ITA, "📋 Fallback Italia"
-    if "Europa" in categoria: return FALLBACK_EU, "📋 Fallback Europa"
-    if "Crypto" in categoria: return FALLBACK_CRYPTO, "📋 Fallback Crypto"
-    return FALLBACK_USA, "📋 Fallback USA"
-
-
+    info_extra = f" ({motivo_err})" if motivo_err else ""
+    if "Italia" in categoria:
+        return FALLBACK_ITA, f"📋 Listino Borsa Italiana ({len(FALLBACK_ITA.split(','))} titoli .MI){info_extra}"
+    if "Europa" in categoria:
+        return FALLBACK_EU, f"📋 Listino Europa{info_extra}"
+    if "Crypto" in categoria:
+        return FALLBACK_CRYPTO, f"📋 Listino Crypto{info_extra}"
+    return FALLBACK_USA, f"📋 Listino USA{info_extra}"
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
