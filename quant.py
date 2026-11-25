@@ -260,10 +260,6 @@ FALLBACK_ITA = (
     "SPM.MI,SRG.MI,SRS.MI,SSL.MI,STAR7.MI,STLAM.MI,STMPA.MI,SWT.MI,TEN.MI,TGYM.MI,TIP.MI,TISG.MI,TPRO.MI,TRN.MI,"
     "TXT.MI,UCG.MI,UNI.MI,UNIR.MI,US.MI,VAL.MI,VLA.MI,WIIT.MI,ZIGN.MI"
 )
-
-FALLBACK_EU = "ASML.AS,SAP.DE,MC.PA,SIE.DE,TTE.PA,OR.PA,SAN.MC,ALV.DE,AIR.PA,UCG.MI,ISP.MI,ENI.MI"
-FALLBACK_CRYPTO = "BTC-USD,ETH-USD,SOL-USD,BNB-USD,XRP-USD,ADA-USD,AVAX-USD,LINK-USD,DOT-USD,SUI-USD,NEAR-USD,APT-USD,INJ-USD,RENDER-USD,FET-USD"
-
 ELENCO_PANIERI = [
     "USA — Large Cap (>10B)",
     "USA — Mid Cap (2B–10B)",
@@ -273,12 +269,51 @@ ELENCO_PANIERI = [
     "Crypto — TOTAL 1 & 2 (Top 30)",
     "Crypto — TOTAL 3 Altcoins (Rank 31–200)"
 ]
+FALLBACK_EU = (
+    "ASML.AS,SAP.DE,MC.PA,OR.PA,SIE.DE,TTE.PA,SAN.MC,ALV.DE,AIR.PA,SU.PA,DTE.DE,IBE.MC,BNP.PA,CS.PA,ENEL.MI,ISP.MI,"
+    "UCG.MI,ENI.MI,RACE.MI,STLAM.MI,PRX.AS,INGA.AS,AD.AS,ABI.BR,BAS.DE,BAYN.DE,BMW.DE,MBG.DE,VOW3.DE,ADS.DE,DBK.DE,"
+    "CBK.DE,DPW.DE,IFX.DE,MUV2.DE,RWE.DE,EOAN.DE,HEN3.DE,MRK.DE,FRE.DE,HEI.DE,MTX.DE,SY1.DE,ZAL.DE,KER.PA,RMS.PA,"
+    "EL.PA,DG.PA,AI.PA,SAF.PA,SGO.PA,CAP.PA,DSY.PA,STMPA.PA,ORA.PA,VIV.PA,ENGI.PA,GLE.PA,ACA.PA,CA.PA,ML.PA,RI.PA,"
+    "BBVA.MC,ITX.MC,TEF.MC,REP.MC,AMS.MC,FER.MC,ELE.MC,CLNX.MC,AENA.MC,NOKIA.HE,NESTE.HE,KNEBV.HE,UPM.HE"
+)
+
+FALLBACK_CRYPTO = (
+    "BTC-USD,ETH-USD,USDT-USD,XRP-USD,BNB-USD,SOL-USD,DOGE-USD,ADA-USD,TRX-USD,AVAX-USD,SHIB-USD,TON-USD,LINK-USD,"
+    "DOT-USD,XLM-USD,BCH-USD,SUI-USD,LTC-USD,PEPE-USD,NEAR-USD,UNI-USD,APT-USD,ICP-USD,ETC-USD,POL-USD,RENDER-USD,"
+    "FET-USD,VET-USD,ARB-USD,FIL-USD,ATOM-USD,OP-USD,INJ-USD,IMX-USD,STX-USD,GRT-USD,AAVE-USD,THETA-USD,ALGO-USD,"
+    "FTM-USD,RUNE-USD,SAND-USD,MANA-USD,AXS-USD,EGLD-USD,FLOW-USD,XTZ-USD,EOS-USD,GALA-USD,CHZ-USD,CRV-USD,LDO-USD,"
+    "MKR-USD,SNX-USD,COMP-USD,DYDX-USD,ENS-USD,1INCH-USD,ZEC-USD,DASH-USD,KAVA-USD,CELO-USD,BAT-USD,ZIL-USD,ENJ-USD"
+)
+
+
+def _parse_market_cap(val_raw):
+    s = str(val_raw).replace("$", "").replace(",", "").strip().upper()
+    if not s or s in ("NA", "N/A", "NONE", "-"):
+        return 0.0
+    mult = 1.0
+    if s.endswith("T"):
+        mult = 1_000_000_000_000.0
+        s = s[:-1]
+    elif s.endswith("B"):
+        mult = 1_000_000_000.0
+        s = s[:-1]
+    elif s.endswith("M"):
+        mult = 1_000_000.0
+        s = s[:-1]
+    elif s.endswith("K"):
+        mult = 1_000.0
+        s = s[:-1]
+    try:
+        return float(s) * mult
+    except Exception:
+        return 0.0
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def scarica_paniere_universale(categoria):
     headers_std = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*"
     }
     motivo_err = ""
 
@@ -292,10 +327,9 @@ def scarica_paniere_universale(categoria):
                 selezionati = []
                 for r in rows:
                     sym = str(r.get("symbol", "")).strip()
-                    if not sym or "^" in sym or "/" in sym:
+                    if not sym or "^" in sym or "/" in sym or len(sym) > 5:
                         continue
-                    mc_raw = str(r.get("marketCap", "0")).replace("$", "").replace(",", "").strip()
-                    mc = float(mc_raw) if mc_raw.replace(".", "", 1).isdigit() else 0.0
+                    mc = _parse_market_cap(r.get("marketCap", "0"))
 
                     if "Large Cap" in categoria and mc >= 10_000_000_000:
                         selezionati.append(sym.replace(".", "-"))
@@ -308,7 +342,7 @@ def scarica_paniere_universale(categoria):
                     return ",".join(selezionati), f"🌐 Live NASDAQ ({len(selezionati)} titoli)"
             motivo_err = f"HTTP {res.status_code}"
 
-        # 2. ITALIA (FTSE MIB + FTSE Italia Mid Cap + Small Cap via Regex su Wikipedia)
+        # 2. ITALIA (FTSE MIB + FTSE Italia Mid Cap + Small Cap via Wikipedia)
         elif categoria.startswith("Italia —"):
             pagine_it = [
                 "https://wikipedia.org",
@@ -328,9 +362,11 @@ def scarica_paniere_universale(categoria):
             if len(tutti_it) >= 35:
                 return ",".join(tutti_it), f"🌐 Live Borsa Italiana ({len(tutti_it)} titoli .MI)"
 
-        # 3. EUROPA (EURO STOXX 50 + DAX + CAC 40 via Regex su Wikipedia)
+        # 3. EUROPA (EURO STOXX 50 + DAX + CAC 40 + AEX + IBEX 35 via Wikipedia)
         elif categoria.startswith("Europa —"):
             pagine_eu = [
+                "https://wikipedia.org",
+                "https://wikipedia.org",
                 "https://wikipedia.org",
                 "https://wikipedia.org",
                 "https://wikipedia.org"
@@ -339,7 +375,7 @@ def scarica_paniere_universale(categoria):
             for url_w in pagine_eu:
                 resp_w = requests.get(url_w, headers=headers_std, timeout=10)
                 if resp_w.status_code == 200:
-                    trovati = re.findall(r"\b([A-Z0-9]{2,6}\.(?:DE|PA|AS|MC|MI))\b", resp_w.text)
+                    trovati = re.findall(r"\b([A-Z0-9]{2,6}\.(?:DE|PA|AS|MC|MI|BR|HE))\b", resp_w.text)
                     tutti_eu.extend(trovati)
                 else:
                     motivo_err = f"Wiki HTTP {resp_w.status_code}"
@@ -348,19 +384,20 @@ def scarica_paniere_universale(categoria):
             if len(tutti_eu) >= 40:
                 return ",".join(tutti_eu), f"🌐 Live Europa ({len(tutti_eu)} titoli)"
 
-        # 4. CRYPTO TOTAL 1, TOTAL 2 & TOTAL 3 (Top 220 CoinGecko -> Yahoo -USD)
+        # 4. CRYPTO TOTAL 1, TOTAL 2 & TOTAL 3 (Top 250 CoinGecko -> Yahoo -USD)
         elif categoria.startswith("Crypto —"):
             url_cg = "https://coingecko.com"
-            params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 220, "page": 1}
+            params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 250, "page": 1}
             res = requests.get(url_cg, params=params, headers=headers_std, timeout=12)
             if res.status_code == 200:
-                stable = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "STETH", "WSTETH", "WBTC", "BUSD", "USDS"}
+                stable = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "STETH", "WSTETH", "WBTC", "BUSD", "USDS", "CBBTC"}
                 coins = [
                     f"{c['symbol'].upper()}-USD"
                     for c in res.json()
                     if c.get("symbol", "").upper() not in stable
                 ]
-                lista_c = coins[:30] if "TOTAL 1 & 2" in categoria else coins[30:200]
+                coins = list(dict.fromkeys(coins))
+                lista_c = coins[:30] if "TOTAL 1 & 2" in categoria else coins[30:220]
                 if len(lista_c) >= 15:
                     return ",".join(lista_c), f"🌐 Live CoinGecko ({len(lista_c)} crypto)"
             motivo_err = f"CG HTTP {res.status_code}"
@@ -372,10 +409,13 @@ def scarica_paniere_universale(categoria):
     if "Italia" in categoria:
         return FALLBACK_ITA, f"📋 Listino Borsa Italiana ({len(FALLBACK_ITA.split(','))} titoli .MI){info_extra}"
     if "Europa" in categoria:
-        return FALLBACK_EU, f"📋 Listino Europa{info_extra}"
+        return FALLBACK_EU, f"📋 Listino Europa ({len(FALLBACK_EU.split(','))} titoli){info_extra}"
     if "Crypto" in categoria:
-        return FALLBACK_CRYPTO, f"📋 Listino Crypto{info_extra}"
-    return FALLBACK_USA, f"📋 Listino USA{info_extra}"
+        all_c = FALLBACK_CRYPTO.split(",")
+        sub_c = all_c[:25] if "TOTAL 1 & 2" in categoria else all_c[25:]
+        return ",".join(sub_c), f"📋 Listino Crypto ({len(sub_c)} asset){info_extra}"
+    return FALLBACK_USA, f"📋 Listino USA ({len(FALLBACK_USA.split(','))} titoli){info_extra}"
+
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -723,7 +763,8 @@ if scelta_modulo == "📁 Analisi Triple-POC":
         tf_label = st.selectbox("Timeframe Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)"], key="an_timeframe")
         tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_label]
 
-    max_scan_n = st.slider("Numero massimo asset da scansionare (ordinati per Market Cap):", min_value=20, max_value=200, value=60, step=20, key="an_max_scan")
+    max_scan_n = st.slider("Numero massimo asset da scansionare (ordinati per Market Cap):", min_value=20, max_value=500, value=100, step=20, key="an_max_scan")
+
     tickers_input = st.text_area("Tickers specifici (lascia vuoto per scansionare automaticamente il paniere selezionato):", value="", height=80, key=f"an_area_{paniere_selezionato}")
 
     if st.button("🌐 Scansiona Tutto il Paniere & Calcola i 3 POC", type="secondary", use_container_width=True):
