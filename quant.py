@@ -776,6 +776,9 @@ if scelta_modulo == "📁 Analisi Triple-POC":
         st.success(f"✅ Visualizzati tutti i **{len(df_raw_poc)} titoli** ({st.session_state.get('scan_paniere_nome', '')})!")
 
         f_col1, f_col2 = st.columns(2)
+        max_dist_pct = st.slider("📏 Distanza massima dal POC selezionato (%):", min_value=1.0, max_value=100.0, value=15.0, step=1.0, key="sl_max_dist_poc")
+        df_filtrato = df_filtrato[df_filtrato[col_dist].isna() | (df_filtrato[col_dist].abs() <= max_dist_pct)]
+
         with f_col1:
             filtro_poc_vista = st.selectbox(
                 "🎯 Quale POC vuoi visionare nella tabella:",
@@ -823,6 +826,11 @@ if scelta_modulo == "📁 Analisi Triple-POC":
             df_filtrato = df_filtrato[df_filtrato[col_dist].notna() & (df_filtrato[col_dist] >= 0)]
         elif filtro_dir_poc == "🔴 Solo SHORT (Prezzo sotto il POC)":
             df_filtrato = df_filtrato[df_filtrato[col_dist].notna() & (df_filtrato[col_dist] < 0)]
+
+        # Ordina dal titolo più VICINO al POC (distanza assoluta minore) al più lontano
+        df_filtrato["_dist_abs"] = df_filtrato[col_dist].abs()
+        df_filtrato = df_filtrato.sort_values(by="_dist_abs", ascending=True, na_position="last").drop(columns=["_dist_abs"]).reset_index(drop=True)
+
 
         df_filtrato = df_filtrato.sort_values(by=col_dist, ascending=False, na_position="last").reset_index(drop=True)
 
