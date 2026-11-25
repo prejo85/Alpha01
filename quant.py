@@ -436,7 +436,7 @@ def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
         try:
             df_batch = yf.download(
                 tickers=blocco,
-                period="5y" if timeframe == "1d" else "max",
+                period="max",
                 interval=timeframe,
                 group_by="ticker",
                 auto_adjust=False,
