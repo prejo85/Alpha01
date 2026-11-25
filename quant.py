@@ -779,8 +779,7 @@ if scelta_modulo == "📁 Analisi Triple-POC":
         elif filtro_dir_poc == "🔴 Solo SHORT (Prezzo sotto il POC)":
             df_filtrato = df_filtrato[df_filtrato[col_dist].notna() & (df_filtrato[col_dist] < 0)]
 
-        df_filtrato = df_filtrato.sort_values(by=col_dist, ascending=False, na_position="last")
-             df_filtrato = df_filtrato.sort_values(by=col_dist, ascending=False, na_position="last").reset_index(drop=True)
+        df_filtrato = df_filtrato.sort_values(by=col_dist, ascending=False, na_position="last").reset_index(drop=True)
 
         st.caption("💡 Clicca su una riga della tabella per inviare subito il titolo a **TradingView Pro** o ai **Grafici 3-POC**.")
         ev_tab_poc = st.dataframe(
