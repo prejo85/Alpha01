@@ -376,11 +376,23 @@ def scarica_paniere_universale(categoria):
     if "Crypto" in categoria:
         return FALLBACK_CRYPTO, f"📋 Listino Crypto{info_extra}"
     return FALLBACK_USA, f"📋 Listino USA{info_extra}"
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
     risultati = []
-    for i in range(0, len(lista_tickers), 40):
-        blocco = lista_tickers[i:i + 40]
+
+    def _estrai_df_singolo(df_raw, simbolo):
+        if df_raw is None or df_raw.empty:
+            return pd.DataFrame()
+        if isinstance(df_raw.columns, pd.MultiIndex):
+            if simbolo not in df_raw.columns.get_level_values(0):
+                return pd.DataFrame()
+            return df_raw[simbolo].dropna(subset=["Close", "High", "Low"])
+        return df_raw.dropna(subset=["Close", "High", "Low"])
+
+    for i in range(0, len(lista_tickers), 25):
+        blocco = lista_tickers[i:i + 25]
         try:
             df_batch = yf.download(
                 tickers=blocco,
@@ -388,7 +400,7 @@ def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
                 interval=timeframe,
                 group_by="ticker",
                 auto_adjust=False,
-                threads=True,
+                threads=False,
                 progress=False
             )
         except Exception:
@@ -396,20 +408,24 @@ def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
 
         for tk in blocco:
             dec = 4 if "-USD" in tk else 2
-            try:
-                if df_batch.empty:
-                    raise ValueError("Batch vuoto")
+            df_t = _estrai_df_singolo(df_batch, tk)
 
-                if isinstance(df_batch.columns, pd.MultiIndex):
-                    if tk not in df_batch.columns.get_level_values(0):
-                        raise ValueError("Ticker assente")
-                    df_t = df_batch[tk].dropna(subset=["Close", "High", "Low"])
-                else:
-                    df_t = df_batch.dropna(subset=["Close", "High", "Low"])
+            # Se il batch ha saltato questo titolo, ritenta il download singolo
+            if len(df_t) < 5:
+                try:
+                    df_sing = yf.download(
+                        tickers=tk,
+                        period="5y" if timeframe == "1d" else "max",
+                        interval=timeframe,
+                        auto_adjust=False,
+                        multi_level_index=False,
+                        progress=False
+                    )
+                    df_t = _estrai_df_singolo(df_sing, tk)
+                except Exception:
+                    df_t = pd.DataFrame()
 
-                if len(df_t) < 5:
-                    raise ValueError("Poche candele")
-
+            if len(df_t) >= 5:
                 if "Volume" not in df_t.columns or df_t["Volume"].fillna(0).sum() <= 0:
                     df_t = df_t.copy()
                     df_t["Volume"] = 1.0
@@ -447,7 +463,7 @@ def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
                     "Dist. Recente %": d3_pct,
                     "Regime 3-POC": allineamento
                 })
-            except Exception:
+            else:
                 risultati.append({
                     "Ticker": tk,
                     "Prezzo": None,
@@ -457,8 +473,10 @@ def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
                     "Dist. ATH %": None,
                     "POC Recente": None,
                     "Dist. Recente %": None,
-                    "Regime 3-POC": "⚪ N/D (Delistato)"
+                    "Regime 3-POC": "⚪ N/D (Dati non disp.)"
                 })
+
+    return pd.DataFrame(risultati)
 
     return pd.DataFrame(risultati)
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
@@ -762,7 +780,37 @@ if scelta_modulo == "📁 Analisi Triple-POC":
             df_filtrato = df_filtrato[df_filtrato[col_dist].notna() & (df_filtrato[col_dist] < 0)]
 
         df_filtrato = df_filtrato.sort_values(by=col_dist, ascending=False, na_position="last")
-        st.dataframe(df_filtrato[cols_show], use_container_width=True, hide_index=True)
+             df_filtrato = df_filtrato.sort_values(by=col_dist, ascending=False, na_position="last").reset_index(drop=True)
+
+        st.caption("💡 Clicca su una riga della tabella per inviare subito il titolo a **TradingView Pro** o ai **Grafici 3-POC**.")
+        ev_tab_poc = st.dataframe(
+            df_filtrato[cols_show],
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="tabella_poc_interattiva"
+        )
+
+        righe_sel = ev_tab_poc.get("selection", {}).get("rows", []) if isinstance(ev_tab_poc, dict) else getattr(ev_tab_poc.selection, "rows", [])
+        if len(righe_sel) > 0:
+            tk_scelto = str(df_filtrato.iloc[righe_sel[0]]["Ticker"])
+            st.markdown(f"**🎯 Asset selezionato dalla tabella:** `{tk_scelto}`")
+            act_c1, act_c2 = st.columns(2)
+            with act_c1:
+                def _vai_a_tv(simbolo_sel=tk_scelto):
+                    st.session_state["tv_test_tk"] = simbolo_sel
+                    st.session_state["menu_navigazione_moduli"] = "🧪 TradingView Pro"
+                    st.session_state["jump_to_modulo"] = "🧪 TradingView Pro"
+
+                st.button(f"🧪 Apri {tk_scelto} su TradingView Pro", type="primary", use_container_width=True, on_click=_vai_a_tv)
+
+            with act_c2:
+                def _carica_in_3poc(simbolo_sel=tk_scelto, key_area=f"an_area_{paniere_selezionato}"):
+                    st.session_state[key_area] = simbolo_sel
+
+                st.button(f"📊 Inserisci {tk_scelto} per Analisi Grafica 3-POC", use_container_width=True, on_click=_carica_in_3poc)
+
 
 
     # ==========================================
