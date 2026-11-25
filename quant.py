@@ -320,7 +320,7 @@ def scarica_paniere_universale(categoria):
     try:
         # 1. USA (Large, Mid o Small Cap via NASDAQ Screener ufficiale)
         if categoria.startswith("USA —"):
-            url_us = "https://nasdaq.com"
+            url_us = "https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&offset=0&download=true"
             res = requests.get(url_us, headers=headers_std, timeout=15)
             if res.status_code == 200:
                 rows = res.json().get("data", {}).get("rows", [])
@@ -839,8 +839,8 @@ if scelta_modulo == "📁 Analisi Triple-POC":
         )
 
         righe_sel = ev_tab_poc.get("selection", {}).get("rows", []) if isinstance(ev_tab_poc, dict) else getattr(ev_tab_poc.selection, "rows", [])
-        if len(righe_sel) > 0:
-            tk_scelto = str(df_filtrato.iloc[righe_sel]["Ticker"])
+        if len(righe_sel) > 0 and righe_sel[0] < len(df_filtrato):
+            tk_scelto = str(df_filtrato.iloc[righe_sel[0]]["Ticker"])
             st.markdown(f"**🎯 Asset selezionato dalla tabella:** `{tk_scelto}`")
             act_c1, act_c2 = st.columns(2)
             with act_c1:
