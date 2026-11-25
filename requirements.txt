@@ -8,3 +8,6 @@ matplotlib
 arch
 scipy
 python-dotenv
+lxml
+beautifulsoup4
+html5lib
