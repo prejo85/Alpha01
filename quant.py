@@ -249,18 +249,18 @@ TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json
 # ==============================================================================
 FALLBACK_USA = "AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,BRK-B,JPM,V,AVGO,COST,NFLX,AMD,PLTR"
 FALLBACK_ITA = (
-    "A2A.MI,AMP.MI,AZM.MI,BAMI.MI,BC.MI,BMED.MI,BMPS.MI,BPER.MI,BPSO.MI,CPR.MI,DIA.MI,ENEL.MI,ENI.MI,ERG.MI,EVO.MI,"
-    "FBK.MI,G.MI,HER.MI,INW.MI,IP.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,"
-    "SGO.MI,SRG.MI,STLAM.MI,STMPA.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,ACE.MI,ADB.MI,AEF.MI,ALV.MI,ANIM.MI,AP.MI,ARN.MI,"
-    "ASC.MI,AST.MI,AT.MI,AVIO.MI,BDB.MI,BEC.MI,BF.MI,BFE.MI,BGN.MI,BIES.MI,BND.MI,BRE.MI,BSS.MI,CAI.MI,CAR.MI,"
-    "CE.MI,CEM.MI,CIR.MI,CLA.MI,CMB.MI,COV.MI,CSP.MI,DAL.MI,DAN.MI,DAT.MI,DBG.MI,DEA.MI,DEL.MI,DIG.MI,DLG.MI,"
-    "DOV.MI,ELN.MI,EM.MI,ENAV.MI,ENG.MI,EQU.MI,ES.MI,ETH.MI,EXAI.MI,EXPR.MI,FILA.MI,FIN.MI,FNM.MI,GABET.MI,GAR.MI,"
-    "GEF.MI,GPI.MI,GVS.MI,IG.MI,IGD.MI,ILL.MI,IND.MI,INT.MI,IRCE.MI,IRE.MI,ITM.MI,IVG.MI,JUVE.MI,LDB.MI,LIT.MI,"
-    "LUCE.MI,LVE.MI,MAIRE.MI,MARR.MI,MOL.MI,MON.MI,MS.MI,MT.MI,MTP.MI,NEWL.MI,NOE.MI,NR.MI,NVT.MI,OVS.MI,PHN.MI,"
-    "PIA.MI,PINF.MI,PLC.MI,PLT.MI,POL.MI,PRT.MI,RWAY.MI,SAB.MI,SAES.MI,SAL.MI,SAR.MI,SBS.MI,SER.MI,SES.MI,SFER.MI,"
-    "SIT.MI,SL.MI,SOL.MI,SOM.MI,SPM.MI,SRS.MI,SSL.MI,STAR7.MI,SWT.MI,TIP.MI,TGYM.MI,TISG.MI,TPRO.MI,TXT.MI,UNIR.MI,"
-    "US.MI,VAL.MI,VLA.MI,WIIT.MI,ZIGN.MI"
+    "A2A.MI,ACE.MI,ADB.MI,AEF.MI,AMP.MI,ANIM.MI,AP.MI,ARN.MI,ASC.MI,AVIO.MI,AZM.MI,BAMI.MI,BC.MI,BDB.MI,BEC.MI,"
+    "BF.MI,BFE.MI,BGN.MI,BIES.MI,BMED.MI,BMPS.MI,BND.MI,BPER.MI,BPSO.MI,BRE.MI,BSS.MI,CAI.MI,CAR.MI,CE.MI,CEM.MI,"
+    "CIR.MI,CMB.MI,CPR.MI,CSP.MI,DAL.MI,DAN.MI,DBG.MI,DEA.MI,DEL.MI,DIA.MI,DLG.MI,DOV.MI,ELN.MI,EM.MI,ENAV.MI,"
+    "ENEL.MI,ENI.MI,EQU.MI,ERG.MI,ETH.MI,EVO.MI,EXAI.MI,FBK.MI,FILA.MI,FIN.MI,FNM.MI,G.MI,GABET.MI,GAR.MI,GEF.MI,"
+    "GPI.MI,GVS.MI,HER.MI,IG.MI,IGD.MI,ILL.MI,IND.MI,INT.MI,INW.MI,IP.MI,IRCE.MI,IRE.MI,ISP.MI,ITM.MI,IVG.MI,"
+    "JUVE.MI,LDB.MI,LDO.MI,LIT.MI,LUCE.MI,LVE.MI,MAIRE.MI,MARR.MI,MB.MI,MOL.MI,MON.MI,MONC.MI,MS.MI,MT.MI,MTP.MI,"
+    "NEXI.MI,NEWL.MI,NOE.MI,NR.MI,NVT.MI,OVS.MI,PHN.MI,PIA.MI,PINF.MI,PIRC.MI,PLC.MI,PLT.MI,POL.MI,PRT.MI,PRY.MI,"
+    "PST.MI,RACE.MI,REC.MI,RWAY.MI,SAB.MI,SAES.MI,SAL.MI,SBS.MI,SER.MI,SES.MI,SFER.MI,SIT.MI,SL.MI,SOL.MI,SOM.MI,"
+    "SPM.MI,SRG.MI,SRS.MI,SSL.MI,STAR7.MI,STLAM.MI,STMPA.MI,SWT.MI,TEN.MI,TGYM.MI,TIP.MI,TISG.MI,TPRO.MI,TRN.MI,"
+    "TXT.MI,UCG.MI,UNI.MI,UNIR.MI,US.MI,VAL.MI,VLA.MI,WIIT.MI,ZIGN.MI"
 )
+
 FALLBACK_EU = "ASML.AS,SAP.DE,MC.PA,SIE.DE,TTE.PA,OR.PA,SAN.MC,ALV.DE,AIR.PA,UCG.MI,ISP.MI,ENI.MI"
 FALLBACK_CRYPTO = "BTC-USD,ETH-USD,SOL-USD,BNB-USD,XRP-USD,ADA-USD,AVAX-USD,LINK-USD,DOT-USD,SUI-USD,NEAR-USD,APT-USD,INJ-USD,RENDER-USD,FET-USD"
 
@@ -410,20 +410,26 @@ def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
             dec = 4 if "-USD" in tk else 2
             df_t = _estrai_df_singolo(df_batch, tk)
 
-            # Se il batch ha saltato questo titolo, ritenta il download singolo
             if len(df_t) < 5:
-                try:
-                    df_sing = yf.download(
-                        tickers=tk,
-                        period="5y" if timeframe == "1d" else "max",
-                        interval=timeframe,
-                        auto_adjust=False,
-                        multi_level_index=False,
-                        progress=False
-                    )
-                    df_t = _estrai_df_singolo(df_sing, tk)
-                except Exception:
-                    df_t = pd.DataFrame()
+                import time
+                for per_try in ["5y", "2y"]:
+                    try:
+                        time.sleep(0.2)
+                        df_sing = yf.download(
+                            tickers=tk,
+                            period=per_try,
+                            interval=timeframe,
+                            auto_adjust=False,
+                            multi_level_index=False,
+                            progress=False
+                        )
+                        df_t = _estrai_df_singolo(df_sing, tk)
+                        if len(df_t) >= 5:
+                            break
+                    except Exception:
+                        continue
+
+
 
             if len(df_t) >= 5:
                 if "Volume" not in df_t.columns or df_t["Volume"].fillna(0).sum() <= 0:
@@ -793,7 +799,7 @@ if scelta_modulo == "📁 Analisi Triple-POC":
 
         righe_sel = ev_tab_poc.get("selection", {}).get("rows", []) if isinstance(ev_tab_poc, dict) else getattr(ev_tab_poc.selection, "rows", [])
         if len(righe_sel) > 0:
-            tk_scelto = str(df_filtrato.iloc[righe_sel[0]]["Ticker"])
+            tk_scelto = str(df_filtrato.iloc[righe_sel]["Ticker"])
             st.markdown(f"**🎯 Asset selezionato dalla tabella:** `{tk_scelto}`")
             act_c1, act_c2 = st.columns(2)
             with act_c1:
@@ -805,17 +811,21 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                 st.button(f"🧪 Apri {tk_scelto} su TradingView Pro", type="primary", use_container_width=True, on_click=_vai_a_tv)
 
             with act_c2:
-                def _carica_in_3poc(simbolo_sel=tk_scelto, key_area=f"an_area_{paniere_selezionato}"):
+                def _carica_e_apri_3poc(simbolo_sel=tk_scelto, key_area=f"an_area_{paniere_selezionato}"):
                     st.session_state[key_area] = simbolo_sel
+                    st.session_state["auto_run_3poc"] = True
 
-                st.button(f"📊 Inserisci {tk_scelto} per Analisi Grafica 3-POC", use_container_width=True, on_click=_carica_in_3poc)
+                st.button(f"📊 Apri Grafici 3-POC per {tk_scelto}", type="primary", use_container_width=True, on_click=_carica_e_apri_3poc)
+
 
 
 
     # ==========================================
     # --- TAB 1: TRE POC SCANNER (PARTE 2/6) ---
-    # ==========================================
-    if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary"):
+    # ==========================================    
+    
+    if st.button("🔍 Avvia Analisi Grafica Nodes", type="primary") or st.session_state.pop("auto_run_3poc", False):
+
         if tickers_input.strip() == "":
             tickers = [t.strip().upper() for t in ticker_caricati.split(',') if t.strip()]
         else:
