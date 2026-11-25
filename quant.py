@@ -749,6 +749,12 @@ if scelta_modulo == "📁 Analisi Triple-POC":
             col_dist = "Dist. Recente %"
             cols_show = ["Ticker", "Prezzo", "POC Storico", "Dist. Storico %", "POC ATH", "Dist. ATH %", "POC Recente", "Dist. Recente %", "Regime 3-POC"]
 
+        # Protezione: se in session_state c'è ancora il formato vecchio della tabella, resetta
+        if "Dist. Recente %" not in df_raw_poc.columns:
+            del st.session_state["df_scan_poc_cache"]
+            st.info("🔄 Aggiornamento struttura tabella: clicca di nuovo su **Scansiona Tutto il Paniere**.")
+            st.stop()
+
         df_filtrato = df_raw_poc.copy()
         if filtro_dir_poc == "🟢 Solo LONG (Prezzo sopra il POC)":
             df_filtrato = df_filtrato[df_filtrato[col_dist].notna() & (df_filtrato[col_dist] >= 0)]
