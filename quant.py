@@ -244,84 +244,165 @@ BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TESTA_INTERNET = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
 
 # ==============================================================================
-# DATABASE INTERNO DEI PANIERI AZIONARI AGGIORNATO E AMPLIATO
+# MOTORE UNIVERSALE PANIERI GIORNALIERI (USA, ITALIA, EUROPA, CRYPTO TOTAL 1-3)
 # ==============================================================================
-SP500_FULL = (
-    "MMM,AOS,ABT,ABBV,ACN,ADBE,AMD,AES,AFL,A,APD,ABNB,AKAM,ALB,ARE,ALGN,ALLE,LNT,ALL,GOOGL,GOOG,MO,AMZN,AMCR,AEE,"
-    "AEP,AXP,AIG,AMT,AWK,AMP,AME,AMGN,APH,ADI,AON,APA,APO,AAPL,AMAT,APP,APTV,ACGL,ADM,ARES,ANET,AJG,AIZ,T,ATO,ADSK,"
-    "ADP,AZO,AVY,AXON,BKR,BALL,BAC,BAX,BDX,BRK-B,BBY,TECH,BIIB,BLK,BX,BE,BNY,BA,BKNG,BSX,BMY,AVGO,BR,BRO,BF-B,BG,"
-    "BXP,CHRW,CDNS,CPT,COF,CAH,CCL,CARR,CVNA,CASY,CAT,CBOE,CBRE,CDW,COR,CNC,CNP,CF,CRL,SCHW,CHTR,CVX,CMG,CB,CHD,"
-    "CIEN,CI,CINF,CTAS,CSCO,C,CFG,CLX,CME,CMS,KO,CTSH,COHR,COIN,CL,CMCSA,FIX,COP,ED,STZ,CEG,COO,CPRT,GLW,CPAY,CTVA,"
-    "CSGP,COST,CRH,CRWD,CCI,CSX,CMI,CVS,DHR,DRI,DDOG,DVA,DECK,DE,DELL,DAL,DVN,DXCM,FANG,DLR,DG,DLTR,D,DPZ,DASH,DOV,"
-    "DOW,DHI,DTE,DUK,DD,ETN,EBAY,ECHO,ECL,EIX,EW,ELV,EME,EMR,ETR,EOG,EQT,EFX,EQIX,ERIE,ESS,EL,EG,EVRG,P,ES,EXC,EXE,"
-    "EXPE,EXPD,EXR,XOM,FFIV,FDS,FICO,FAST,FRT,FDX,FDXF,FERG,FIS,FITB,FSLR,FE,FISV,FLEX,F,FTNT,FTV,FOXA,FOX,BEN,FCX,"
-    "GRMN,IT,GE,GEHC,GEV,GEN,GNRC,GD,GIS,GM,GPC,GILD,GPN,GL,GDDY,GS,HAL,HIG,HAS,HCA,DOC,HSIC,HSY,HPE,HLT,HD,HON,HRL,"
-    "HST,HWM,HUBB,HUM,HBAN,HII,IBM,IEX,IDXX,ITW,ILMN,INCY,IR,PODD,INTC,IBKR,ICE,IFF,IP,INTU,ISRG,IVZ,INVH,IQV,"
-    "IRM,JBHT,JBL,JKHY,J,JNJ,JCI,JPM,KVUE,KDP,KEY,KEYS,KMB,KIM,KMI,KKR,KLAC,KHC,KR,LHX,LH,LRCX,LVS,LDOS,LEN,LII,LLY,"
-    "LIN,LYV,LMT,L,LOW,LULU,LITE,LYB,MTB,MPC,MAR,MRSH,MLM,MRVL,MAS,MA,MKC,MCD,MCK,MDT,MRK,META,MET,MTD,MGM,MCHP,MU,"
-    "MSFT,MAA,MRNA,MDLZ,MPWR,MNST,MCO,MS,MOS,MSI,MSCI,NDAQ,NTAP,NFLX,NEM,NWSA,NWS,NEE,NKE,NI,NDSN,NSC,NTRS,NOC,NCLH,"
-    "NRG,NUE,NVDA,NVR,NXPI,ORLY,OXY,ODFL,OMC,ON,OKE,ORCL,OTIS,PCAR,PKG,PLTR,PANW,PSKY,PH,PAYX,PYPL,PNR,PEP,PFE,PCG,"
-    "PM,PSX,PNW,PNC,PPG,PPL,PFG,PG,PGR,PLD,PRU,PEG,PTC,PSA,PHM,PWR,QCOM,DGX,Q,RL,RJF,RDDT,RTX,O,REG,REGN,RF,RSG,"
-    "RMD,RVTY,HOOD,ROK,ROL,ROP,ROST,RCL,SPGI,CRM,SBAC,SLB,STX,SRE,NOW,SHW,SPG,SWKS,SJM,SW,SNA,SOLV,SO,LUV,SWK,SBUX,"
-    "STT,STLD,STE,SYK,SMCI,SYF,SNPS,SYY,TMUS,TROW,TTWO,TPR,TRGP,TGT,TEL,TDY,TER,TSLA,TXN,TPL,TXT,TMO,TJX,TKO,TSCO,"
-    "TT,TDG,TRV,TRMB,TFC,TYL,TSN,USB,UBER,UDR,ULTA,UNP,UAL,UPS,URI,UNH,UHS,VLO,VEEV,VTR,VLTO,VRSN,VRSK,VZ,VRTX,VRT,"
-    "VTRS,VICI,V,VST,VMC,WRB,GWW,WAB,WMT,DIS,WBD,WM,WAT,WEC,WFC,WELL,WST,WDC,WY,WSM,WMB,WTW,WDAY,WYNN,XEL,XYL,YUM,"
-    "ZBRA,ZBH,ZTS,VYLR"
-)
-
-NASDAQ_FULL = (
-    "MDLZ,ADI,ADP,ADSK,AAL,ALGN,AMAT,AMD,AMGN,AMZN,ANSS,ASML,TEAM,ADBE,BIIB,BMRN,BKNG,AVGO,CDNS,CDW,CHTR,"
-    "CHKP,CTAS,CSCO,CTSH,CMCSA,CPRT,COST,CRWD,DLTR,DXCM,EBAY,EA,EXPE,FAST,META,FISV,FOXA,FOX,GILD,GOOGL,GOOG,"
-    "IDXX,ILMN,INCY,INTC,INTU,ISRG,JBHT,JD,KDP,KLAC,KHC,LRCX,MELI,MAR,MTCH,MCHP,MU,MSFT,MRNA,MNST,"
-    "NTES,NFLX,NVDA,NXPI,ORLY,OKTA,ODFL,PCAR,PAYX,PYPL,PEP,PDD,REGN,ROST,SIRI,SWKS,SBUX,SNPS,TMUS,TSLA,"
-    "TXN,TCOM,VRSN,VRTX,WBA,WDAY,XEL,ZM,ALAB,CRWV,RKLB,NBIS,STX,MPWR,TER"
-)
-
-FTSEMIB_FULL = (
-    "A2A.MI,AMP.MI,AZM.MI,BAMI.MI,BCA.MI,BMED.MI,BPER.MI,CPR.MI,DIA.MI,ENI.MI,ERG.MI,EVO.MI,FBK.MI,G.MI,"
-    "HER.MI,INW.MI,ISP.MI,LDO.MI,MB.MI,MONC.MI,NEXI.MI,PIRC.MI,PRY.MI,PST.MI,RACE.MI,REC.MI,SGO.MI,SRG.MI,"
-    "STLAM.MI,STMPA.MI,TEN.MI,TRN.MI,UCG.MI,UNI.MI,YSVP.MI,BMPS.MI,BPSO.MI,BC.MI,AVIO.MI,IP.MI"
-)
-TOTAL1_LEADERS = "BTC-USD,ETH-USD,USDT-USD,USDC-USD"
-TOTAL2_MAJORS = "SOL-USD,BNB-USD,XRP-USD,ADA-USD,TRX-USD,DOT-USD,LINK-USD,AVAX-USD,TON-USD,SHIB-USD,SUI-USD"
-TOTAL3_ALTS = (
-    "MATIC-USD,LTC-USD,UNI-USD,NEAR-USD,APT-USD,ICP-USD,STX-USD,FIL-USD,ATOM-USD,"
-    "IMX-USD,RNDR-USD,GRT-USD,FTM-USD,OP-USD,ARB-USD,INJ-USD,LDO-USD,TIA-USD,"
-    "SEI-USD,AAVE-USD,MKR-USD,RUNE-USD,EGLD-USD,THETA-USD,ALGO-USD,XLM-USD,VET-USD,"
-    "FLOW-USD,AXS-USD,SAND-USD,MANA-USD,GALA-USD,CHZ-USD,DYDX-USD,CRV-USD,ENS-USD,"
-    "LRC-USD,ANKR-USD,WOO-USD,GMX-USD,JUP-USD,FET-USD,TAO-USD,WLD-USD,ONDO-USD,PYTH-USD,JTO-USD"
-)
-CRYPTO_FULL = f"{TOTAL1_LEADERS},{TOTAL2_MAJORS},{TOTAL3_ALTS}"
-
-MIDCAP_US = (
-    "ONDS,RGTI,AGIO,AIRS,ALG,HUBS,CLX,IREN,RIVN,MARA,JAN,LIFE,MXL,IESC,HALO,TXRH,DKS,WFR,DT,"
-    "SMR,XPO,GFL,FLEX,JBL,AA,MTDR,CHX,OVV,STNG,WBS,DINO,AMR,SF,LANC,PNR,XOM,AAL,X"
-)
-CRYPTO_STOCKS = "COIN,MARA,IREN,CLSK,WULF,MSTR,HUT,CORZ,RIOT,CIFR,BTBT,BOOM"
-EUROSTOXX_FULL = (
-    "ADS.DE,ALV.DE,BAS.DE,BAYN.DE,BMW.DE,DB1.DE,DBK.DE,DPW.DE,DTE.DE,EOAN.DE,IFX.DE,MBG.DE,MUV2.DE,RWE.DE,SAP.DE,SIE.DE,"
-    "AI.PA,AIR.PA,ALO.PA,CS.PA,BNP.PA,CA.PA,DG.PA,EL.PA,ERF.PA,OR.PA,MC.PA,ML.PA,ORAN.PA,RI.PA,RMS.PA,SAN.PA,SGO.PA,"
-    "SU.PA,TTE.PA,VIE.PA,VIV.PA,ASML.AS,ADYEN.AS,INGA.AS,KPN.AS,PRX.AS,BBVA.MC,SAN.MC,ITX.MC,REP.MC,ENI.MI,ISP.MI,UCG.MI"
-)
+FALLBACK_USA = "AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,BRK-B,JPM,V,AVGO,COST,NFLX,AMD,PLTR"
+FALLBACK_ITA = "UCG.MI,ISP.MI,ENI.MI,ENEL.MI,RACE.MI,STLAM.MI,G.MI,LDO.MI,PRY.MI,STMPA.MI,BAMI.MI,BPER.MI"
+FALLBACK_EU = "ASML.AS,SAP.DE,MC.PA,SIE.DE,TTE.PA,OR.PA,SAN.MC,ALV.DE,AIR.PA,UCG.MI,ISP.MI,ENI.MI"
+FALLBACK_CRYPTO = "BTC-USD,ETH-USD,SOL-USD,BNB-USD,XRP-USD,ADA-USD,AVAX-USD,LINK-USD,DOT-USD,SUI-USD,NEAR-USD,APT-USD,INJ-USD,RENDER-USD,FET-USD"
 
 ELENCO_PANIERI = [
-    "S&P 500", 
-    "NASDAQ 100", 
-    "FTSE MIB (FIB)", 
-    "Crypto", 
-    "US Mid-Caps", 
-    "Crypto & AI Stocks", 
-    "Euro Stoxx 50"
+    "USA — Large Cap (>10B)",
+    "USA — Mid Cap (2B–10B)",
+    "USA — Small Cap (300M–2B)",
+    "Italia — Tutte (.MI Large/Mid/Small)",
+    "Europa — Top 300 (.DE/.PA/.AS/.MC/.MI)",
+    "Crypto — TOTAL 1 & 2 (Top 30)",
+    "Crypto — TOTAL 3 Altcoins (Rank 31–200)"
 ]
-def ottieni_paniere(nome_paniere):
-    if nome_paniere == "S&P 500": return SP500_FULL
-    elif nome_paniere == "NASDAQ 100": return NASDAQ_FULL
-    elif nome_paniere == "FTSE MIB (FIB)": return FTSEMIB_FULL
-    elif nome_paniere == "Crypto": return CRYPTO_FULL
-    elif nome_paniere == "US Mid-Caps": return MIDCAP_US
-    elif nome_paniere == "Crypto & AI Stocks": return CRYPTO_STOCKS
-    elif nome_paniere == "Euro Stoxx 50": return EUROSTOXX_FULL
-    return "AAPL,MSFT"
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def scarica_paniere_universale(categoria):
+    headers = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
+
+    try:
+        # 1. USA (Large, Mid o Small Cap via NASDAQ Screener ufficiale)
+        if categoria.startswith("USA —"):
+            url_us = "https://nasdaq.com"
+            res = requests.get(url_us, headers=headers, timeout=15)
+            if res.status_code == 200:
+                rows = res.json().get("data", {}).get("rows", [])
+                selezionati = []
+                for r in rows:
+                    sym = str(r.get("symbol", "")).strip()
+                    if not sym or "^" in sym or "/" in sym:
+                        continue
+                    mc_raw = str(r.get("marketCap", "0")).replace("$", "").replace(",", "").strip()
+                    mc = float(mc_raw) if mc_raw.replace(".", "", 1).isdigit() else 0.0
+
+                    if "Large Cap" in categoria and mc >= 10_000_000_000:
+                        selezionati.append(sym.replace(".", "-"))
+                    elif "Mid Cap" in categoria and 2_000_000_000 <= mc < 10_000_000_000:
+                        selezionati.append(sym.replace(".", "-"))
+                    elif "Small Cap" in categoria and 300_000_000 <= mc < 2_000_000_000:
+                        selezionati.append(sym.replace(".", "-"))
+
+                if len(selezionati) > 20:
+                    return ",".join(selezionati), f"🌐 Live NASDAQ ({len(selezionati)} titoli)"
+
+        # 2. ITALIA & EUROPA (TradingView Scanner -> Suffissi Yahoo)
+        elif categoria.startswith("Italia —") or categoria.startswith("Europa —"):
+            mercati = [("italy", ".MI")] if categoria.startswith("Italia —") else [
+                ("germany", ".DE"), ("france", ".PA"), ("netherlands", ".AS"), ("spain", ".MC"), ("italy", ".MI")
+            ]
+            tutti_eu = []
+            for mkt, suffix in mercati:
+                url_tv = f"https://tradingview.com{mkt}/scan"
+                payload = {
+                    "filter": [{"left": "type", "operation": "equal", "right": "stock"}],
+                    "options": {"lang": "en"},
+                    "symbols": {"query": {"types": []}, "tickers": []},
+                    "columns": ["name", "market_cap_basic"],
+                    "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
+                    "range": [0, 180 if categoria.startswith("Italia —") else 60]
+                }
+                res = requests.post(url_tv, json=payload, headers=headers, timeout=12)
+                if res.status_code == 200:
+                    for item in res.json().get("data", []):
+                        d_arr = item.get("d", [])
+                        if len(d_arr) > 0 and d_arr:
+                            tutti_eu.append(f"{str(d_arr).replace('.', '-')}{suffix}")
+            if len(tutti_eu) > 20:
+                return ",".join(tutti_eu), f"🌐 Live Scanner EU ({len(tutti_eu)} titoli)"
+
+        # 3. CRYPTO TOTAL 1, TOTAL 2 & TOTAL 3 (Top 220 CoinGecko -> Yahoo -USD)
+        elif categoria.startswith("Crypto —"):
+            url_cg = "https://coingecko.com"
+            params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 220, "page": 1}
+            res = requests.get(url_cg, params=params, headers=headers, timeout=12)
+            if res.status_code == 200:
+                stable = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "STETH", "WSTETH", "WBTC", "BUSD", "USDS"}
+                coins = [
+                    f"{c['symbol'].upper()}-USD"
+                    for c in res.json()
+                    if c.get("symbol", "").upper() not in stable
+                ]
+                lista_c = coins[:30] if "TOTAL 1 & 2" in categoria else coins[30:200]
+                if len(lista_c) >= 15:
+                    return ",".join(lista_c), f"🌐 Live CoinGecko ({len(lista_c)} crypto)"
+
+    except Exception:
+        pass
+
+    if "Italia" in categoria: return FALLBACK_ITA, "📋 Fallback Italia"
+    if "Europa" in categoria: return FALLBACK_EU, "📋 Fallback Europa"
+    if "Crypto" in categoria: return FALLBACK_CRYPTO, "📋 Fallback Crypto"
+    return FALLBACK_USA, "📋 Fallback USA"
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
+    risultati = []
+    for i in range(0, len(lista_tickers), 40):
+        blocco = lista_tickers[i:i + 40]
+        try:
+            df_batch = yf.download(
+                tickers=blocco,
+                period="5y" if timeframe == "1d" else "max",
+                interval=timeframe,
+                group_by="ticker",
+                auto_adjust=False,
+                threads=True,
+                progress=False
+            )
+        except Exception:
+            continue
+
+        for tk in blocco:
+            try:
+                if isinstance(df_batch.columns, pd.MultiIndex):
+                    if tk not in df_batch.columns.get_level_values(0):
+                        continue
+                    df_t = df_batch[tk].dropna(subset=["Close", "High", "Low", "Volume"])
+                else:
+                    df_t = df_batch.dropna(subset=["Close", "High", "Low", "Volume"])
+
+                if len(df_t) < 40:
+                    continue
+
+                p_att = float(df_t["Close"].iloc[-1])
+                d_ath = df_t["High"].idxmax()
+                df_ath = df_t.loc[d_ath:] if len(df_t.loc[d_ath:]) >= 15 else df_t.tail(15)
+                df_rec = df_t.tail(giorni_recenti)
+
+                poc_1, _, _, _, _ = calc_vp(df_t, div=100)
+                poc_2, _, _, _, _ = calc_vp(df_ath, div=80)
+                poc_3, _, _, _, _ = calc_vp(df_rec, div=80)
+
+                if None in (poc_1, poc_2, poc_3):
+                    continue
+
+                dist_poc3_pct = ((p_att - poc_3) / poc_3) * 100.0
+                allineamento = (
+                    "🟢 FULL LONG" if (p_att > poc_1 and p_att > poc_2 and p_att > poc_3)
+                    else "🔴 FULL SHORT" if (p_att < poc_1 and p_att < poc_2 and p_att < poc_3)
+                    else "🟡 MISTO"
+                )
+                dec = 4 if "-USD" in tk else 2
+                risultati.append({
+                    "Ticker": tk,
+                    "Prezzo": round(p_att, dec),
+                    "POC Storico": round(poc_1, dec),
+                    "POC ATH": round(poc_2, dec),
+                    "POC Recente": round(poc_3, dec),
+                    "Dist. POC Recente %": round(dist_poc3_pct, 2),
+                    "Regime 3-POC": allineamento
+                })
+            except Exception:
+                continue
+
+    return pd.DataFrame(risultati)
+
 
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     if not BOT_TOKEN:
@@ -547,19 +628,32 @@ if scelta_modulo == "📁 Analisi Triple-POC":
     st.markdown("---")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        paniere_selezionato = st.selectbox("Seleziona Indice/Paniere:", ELENCO_PANIERI, key="an_paniere")
-        ticker_caricati = ottieni_paniere(paniere_selezionato)
-        st.session_state.asset_type_index = 1 if paniere_selezionato == "Crypto" else 0
+        paniere_selezionato = st.selectbox("Seleziona Mercato / Cap:", ELENCO_PANIERI, key="an_paniere")
+        ticker_caricati, fonte_paniere = scarica_paniere_universale(paniere_selezionato)
+        st.caption(f"{fonte_paniere}")
+        st.session_state.asset_type_index = 1 if "Crypto" in paniere_selezionato else 0
     with col2:
         asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"], index=st.session_state.asset_type_index, key="an_type")
     with col3:
-        period_label = st.selectbox("Seleziona Estensione Profilo Recente:", ["3 Mesi", "6 Mesi", "9 Mesi"], key="an_period")
+        period_label = st.selectbox("Estensione Profilo Recente:", ["3 Mesi", "6 Mesi", "9 Mesi"], key="an_period")
         g3 = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}[period_label]
     with col4:
-        tf_label = st.selectbox("Seleziona Timeframe Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)"], key="an_timeframe")
+        tf_label = st.selectbox("Timeframe Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)"], key="an_timeframe")
         tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_label]
 
-    tickers_input = st.text_area("Modifica o verifica i Tickers estratti:", value="", height=100, key=f"an_area_{paniere_selezionato}")
+    max_scan_n = st.slider("Numero massimo asset da scansionare (ordinati per Market Cap):", min_value=20, max_value=200, value=60, step=20, key="an_max_scan")
+    tickers_input = st.text_area("Tickers specifici (lascia vuoto per scansionare automaticamente il paniere selezionato):", value="", height=80, key=f"an_area_{paniere_selezionato}")
+
+    if st.button("🌐 Scansiona Tutto il Paniere & Calcola i 3 POC", type="secondary", use_container_width=True):
+        lista_target = [t.strip().upper() for t in (tickers_input if tickers_input.strip() else ticker_caricati).split(",") if t.strip()][:max_scan_n]
+        with st.spinner(f"Download batch e calcolo 3 POC su {len(lista_target)} asset ({paniere_selezionato})..."):
+            df_res_poc = scansiona_poc_paniere(lista_target, timeframe=tf_attivo, giorni_recenti=g3)
+            if not df_res_poc.empty:
+                st.success(f"✅ Calcolati i 3 POC per **{len(df_res_poc)} asset**!")
+                st.dataframe(df_res_poc.sort_values(by="Dist. POC Recente %", ascending=False), use_container_width=True, hide_index=True)
+            else:
+                st.warning("Nessun dato restituito al momento. Riprova tra qualche secondo.")
+
     # ==========================================
     # --- TAB 1: TRE POC SCANNER (PARTE 2/6) ---
     # ==========================================
