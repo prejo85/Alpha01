@@ -447,42 +447,49 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
             if len(tutti_eu) >= 15:
                 return ",".join(tutti_eu), f"🌐 Live {borsa_indice} ({len(tutti_eu)} titoli)"
 
-        # 4. CRYPTO (Endpoint Ufficiale KuCoin AllTickers — Zero API Key, Zero blocchi IP)
+        # 4. CRYPTO (Endpoint Ufficiale Kraken US Public API — Zero blocchi geografici)
         elif "Crypto" in macro_mercato:
             stable = {
                 "USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "BUSD", "USDS",
-                "PYUSD", "FRAX", "USDD", "EUR", "AEUR", "EURI", "WBTC", "STETH", "WSTETH"
+                "PYUSD", "FRAX", "USDD", "EUR", "AEUR", "EURI", "WBTC", "STETH", "WSTETH",
+                "USD", "GBP", "CAD", "AUD", "JPY", "CHF"
             }
-            url_kc = "https://kucoin.com"
-            res_kc = requests.get(url_kc, timeout=12)
-            if res_kc.status_code == 200:
-                tickers_kc = res_kc.json().get("data", {}).get("ticker", [])
-                coppie_usdt = []
-                for item in tickers_kc:
-                    sym_pair = str(item.get("symbol", ""))
-                    if sym_pair.endswith("-USDT"):
-                        base = sym_pair[:-5]
-                        vol_usd = float(item.get("volValue", 0) or 0)
-                        if (
-                            base
-                            and base not in stable
-                            and vol_usd > 50_000
-                            and not base.endswith(("3L", "3S", "2L", "2S", "UP", "DOWN"))
-                        ):
-                            coppie_usdt.append((f"{base}-USD", vol_usd))
+            url_kr = "https://kraken.com"
+            res_kr = requests.get(url_kr, headers=headers_nq, timeout=12)
+            if res_kr.status_code == 200 and res_kr.text.strip():
+                pairs_kr = res_kr.json().get("result", {})
+                # Estrae tutte le coppie USD spot attive (es. "BTC/USD", "SOL/USD")
+                coins_raw = []
+                for info in pairs_kr.values():
+                    wsname = str(info.get("wsname", ""))
+                    if wsname.endswith("/USD") and info.get("status") == "online":
+                        base = wsname.split("/")
+                        # Normalizza il codice storico Kraken XBT -> BTC
+                        if base == "XBT":
+                            base = "BTC"
+                        if base and base not in stable and not base.endswith((".S", ".M", ".P")):
+                            coins_raw.append(f"{base}-USD")
 
-                coppie_usdt.sort(key=lambda x: x, reverse=True)
-                coins = [c for c, _ in coppie_usdt]
+                # Ordina mettendo prima le Top Major per capitalizzazione e poi tutte le Altcoin
+                top_order = [
+                    "BTC-USD", "ETH-USD", "XRP-USD", "SOL-USD", "BNB-USD", "DOGE-USD", "ADA-USD",
+                    "TRX-USD", "AVAX-USD", "LINK-USD", "TON-USD", "SHIB-USD", "XLM-USD", "SUI-USD",
+                    "DOT-USD", "HBAR-USD", "BCH-USD", "UNI-USD", "LTC-USD", "NEAR-USD", "APT-USD",
+                    "ICP-USD", "PEPE-USD", "ETC-USD", "RENDER-USD", "POL-USD", "FET-USD", "VET-USD",
+                    "KAS-USD", "ATOM-USD"
+                ]
+                uniche = list(dict.fromkeys(coins_raw))
+                top_presenti = [c for c in top_order if c in uniche]
+                alt_presenti = [c for c in uniche if c not in top_presenti]
+                coins = top_presenti + alt_presenti
 
                 if len(coins) >= 50:
                     if "TOTAL 1 & 2" in borsa_indice:
                         lista_c = coins[:30]
                     else:
                         lista_c = coins[30:280]
-                    return ",".join(lista_c), f"🌐 Live Crypto Market ({len(lista_c)} crypto)"
-            motivo_err = f"KC HTTP {res_kc.status_code}"
-
-
+                    return ",".join(lista_c), f"🌐 Live Kraken US API ({len(lista_c)} crypto)"
+            motivo_err = f"KR HTTP {res_kr.status_code}"
 
     except Exception as ex:
         motivo_err = str(ex)[:40]
