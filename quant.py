@@ -401,7 +401,7 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                         return ",".join(selezionati), f"🌐 Live {borsa_indice} ({len(selezionati)} titoli)"
                 motivo_err = f"HTTP {res.status_code}"
 
-    # 2. ITALIA — TradingView Scanner API Diretta (Borsa Italiana MIL -> .MI)
+        # 2. ITALIA — TradingView Scanner API Diretta (Borsa Italiana MIL -> .MI)
         elif "Italia" in macro_mercato:
             payload_it = {
                 "filter": [
@@ -411,7 +411,7 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                 ],
                 "columns": ["name", "market_cap_basic"],
                 "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                "range": [0, 350]
+                "range": [0, 500]
             }
             res_it = requests.post("https://tradingview.com", json=payload_it, timeout=15)
             res_it.raise_for_status()
@@ -419,19 +419,16 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
             titoli_mi = []
             for item in righe_it:
                 d = item.get("d", [])
-                if len(d) >= 2 and d:
-                    sym = str(d).strip().replace(".", "-")
-                    mc = float(d or 0)
+                if len(d) >= 2 and d[0]:
+                    sym = str(d[0]).strip().replace(".", "-")
+                    mc = float(d[1] or 0)
                     titoli_mi.append((f"{sym}.MI", mc))
 
             if borsa_indice == "FTSE MIB":
-                # I 40 titoli principali di Piazza Affari per capitalizzazione
                 selezionati = [s for s, _ in titoli_mi[:40]]
             elif borsa_indice == "FTSE Italia Mid Cap":
-                # Dal 41° al 100° titolo per capitalizzazione
                 selezionati = [s for s, _ in titoli_mi[40:100]]
             elif borsa_indice == "FTSE Italia Small Cap":
-                # Titoli oltre i 100 principali con capitalizzazione > 30M
                 selezionati = [s for s, mc in titoli_mi[100:] if mc >= 30_000_000]
             else:
                 selezionati = [s for s, _ in titoli_mi]
@@ -459,19 +456,18 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                     "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
                     "range": [0, top_n + 15]
                 }
-                res_eu = requests.post(f"https://scanner.tradingview.com/{paese}/scan", json=payload_eu, timeout=15)
+                res_eu = requests.post(f"https://tradingview.com{paese}/scan", json=payload_eu, timeout=15)
                 res_eu.raise_for_status()
                 righe_eu = res_eu.json().get("data", [])
                 selezionati = []
                 for item in righe_eu:
                     d = item.get("d", [])
-                    if d and d:
-                        sym = str(d).strip().replace(".", "-")
+                    if len(d) >= 1 and d[0]:
+                        sym = str(d[0]).strip().replace(".", "-")
                         selezionati.append(f"{sym}{suffisso}")
                 selezionati = list(dict.fromkeys(selezionati))[:top_n]
                 return ",".join(selezionati), f"🌐 Live {borsa_indice} ({len(selezionati)} titoli)"
             else:
-                # EURO STOXX 50 o Europa Top 300 Combinato (Top titoli delle 4 borse principali)
                 combinati = []
                 for paese, exch_eu, suffisso, top_n in [
                     ("germany", "XETR", ".DE", 25),
@@ -489,16 +485,17 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                         "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
                         "range": [0, top_n]
                     }
-                    r_m = requests.post(f"https://scanner.tradingview.com/{paese}/scan", json=payload_m, timeout=12)
+                    r_m = requests.post(f"https://tradingview.com{paese}/scan", json=payload_m, timeout=12)
                     r_m.raise_for_status()
                     for item in r_m.json().get("data", []):
                         d = item.get("d", [])
-                        if d and d:
-                            combinati.append((f"{str(d).strip().replace('.', '-')}{suffisso}", float(d or 0)))
-                combinati.sort(key=lambda x: x, reverse=True)
+                        if len(d) >= 2 and d[0]:
+                            combinati.append((f"{str(d[0]).strip().replace('.', '-')}{suffisso}", float(d[1] or 0)))
+                combinati.sort(key=lambda x: x[1], reverse=True)
                 limite_eu = 50 if "50" in borsa_indice else 100
                 selezionati = list(dict.fromkeys([s for s, _ in combinati]))[:limite_eu]
                 return ",".join(selezionati), f"🌐 Live {borsa_indice} ({len(selezionati)} titoli)"
+
 
         # 4. CRYPTO (Endpoint Ufficiale CoinPaprika Tickers — Top 2.000 per Market Cap, Zero API Key)
         elif "Crypto" in macro_mercato:
