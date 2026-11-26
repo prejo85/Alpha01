@@ -401,28 +401,20 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                         return ",".join(selezionati), f"🌐 Live {borsa_indice} ({len(selezionati)} titoli)"
                 motivo_err = f"HTTP {res.status_code}"
 
-        # 2. ITALIA — TradingView Scanner API Diretta (Borsa Italiana MIL -> .MI)
+        # 2. ITALIA — Screener Ufficiale Yahoo Finance integrato in yfinance (Zero blocchi)
         elif "Italia" in macro_mercato:
-            payload_it = {
-                "filter": [
-                    {"left": "exchange", "operation": "equal", "right": "MIL"},
-                    {"left": "type", "operation": "in_range", "right": ["stock", "dr"]},
-                    {"left": "subtype", "operation": "in_range", "right": ["common", "foreign-issuer"]}
-                ],
-                "columns": ["name", "market_cap_basic"],
-                "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                "range": [0, 500]
-            }
-            res_it = requests.post("https://tradingview.com", json=payload_it, timeout=15)
-            res_it.raise_for_status()
-            righe_it = res_it.json().get("data", [])
+            q_it = yf.EquityQuery("and", [
+                yf.EquityQuery("eq", ["region", "it"]),
+                yf.EquityQuery("eq", ["exchange", "MIL"])
+            ])
+            res_it = yf.screen(q_it, size=250, sortField="intradaymarketcap", sortAsc=False)
+            quotes_it = res_it.get("quotes", []) if isinstance(res_it, dict) else []
             titoli_mi = []
-            for item in righe_it:
-                d = item.get("d", [])
-                if len(d) >= 2 and d[0]:
-                    sym = str(d[0]).strip().replace(".", "-")
-                    mc = float(d[1] or 0)
-                    titoli_mi.append((f"{sym}.MI", mc))
+            for q in quotes_it:
+                sym = str(q.get("symbol", "")).strip()
+                mc = float(q.get("marketCap", 0) or 0)
+                if sym.endswith(".MI"):
+                    titoli_mi.append((sym, mc))
 
             if borsa_indice == "FTSE MIB":
                 selezionati = [s for s, _ in titoli_mi[:40]]
@@ -434,68 +426,53 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                 selezionati = [s for s, _ in titoli_mi]
 
             selezionati = list(dict.fromkeys(selezionati))
-            return ",".join(selezionati), f"🌐 Live Borsa Italiana API ({len(selezionati)} titoli .MI)"
+            return ",".join(selezionati), f"🌐 Live Yahoo Screener Italia ({len(selezionati)} titoli .MI)"
 
-        # 3. EUROPA — TradingView Scanner API Diretta per Borsa Nazionale
+        # 3. EUROPA — Screener Ufficiale Yahoo Finance integrato in yfinance
         elif "Europa" in macro_mercato:
             cfg_eu = {
-                "DAX 40 (Germania .DE)": ("germany", "XETR", ".DE", 40),
-                "CAC 40 (Francia .PA)": ("france", "EURONEXT", ".PA", 40),
-                "IBEX 35 (Spagna .MC)": ("spain", "BME", ".MC", 35),
-                "AEX 25 (Olanda .AS)": ("netherlands", "EURONEXT", ".AS", 25),
+                "DAX 40 (Germania .DE)": ("de", "GER", ".DE", 40),
+                "CAC 40 (Francia .PA)": ("fr", "PAR", ".PA", 40),
+                "IBEX 35 (Spagna .MC)": ("es", "MCE", ".MC", 35),
+                "AEX 25 (Olanda .AS)": ("nl", "AMS", ".AS", 25),
             }
             if borsa_indice in cfg_eu:
-                paese, exch_eu, suffisso, top_n = cfg_eu[borsa_indice]
-                payload_eu = {
-                    "filter": [
-                        {"left": "exchange", "operation": "equal", "right": exch_eu},
-                        {"left": "type", "operation": "equal", "right": "stock"},
-                        {"left": "subtype", "operation": "in_range", "right": ["common", "foreign-issuer"]}
-                    ],
-                    "columns": ["name", "market_cap_basic"],
-                    "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                    "range": [0, top_n + 15]
-                }
-                res_eu = requests.post(f"https://tradingview.com{paese}/scan", json=payload_eu, timeout=15)
-                res_eu.raise_for_status()
-                righe_eu = res_eu.json().get("data", [])
-                selezionati = []
-                for item in righe_eu:
-                    d = item.get("d", [])
-                    if len(d) >= 1 and d[0]:
-                        sym = str(d[0]).strip().replace(".", "-")
-                        selezionati.append(f"{sym}{suffisso}")
+                reg, exch_yf, suffisso, top_n = cfg_eu[borsa_indice]
+                q_eu = yf.EquityQuery("and", [
+                    yf.EquityQuery("eq", ["region", reg]),
+                    yf.EquityQuery("eq", ["exchange", exch_yf])
+                ])
+                res_eu = yf.screen(q_eu, size=top_n + 20, sortField="intradaymarketcap", sortAsc=False)
+                quotes_eu = res_eu.get("quotes", []) if isinstance(res_eu, dict) else []
+                selezionati = [
+                    str(q.get("symbol", "")).strip()
+                    for q in quotes_eu
+                    if str(q.get("symbol", "")).strip().endswith(suffisso)
+                ]
                 selezionati = list(dict.fromkeys(selezionati))[:top_n]
-                return ",".join(selezionati), f"🌐 Live {borsa_indice} ({len(selezionati)} titoli)"
+                return ",".join(selezionati), f"🌐 Live Yahoo Screener {borsa_indice} ({len(selezionati)} titoli)"
             else:
                 combinati = []
-                for paese, exch_eu, suffisso, top_n in [
-                    ("germany", "XETR", ".DE", 25),
-                    ("france", "EURONEXT", ".PA", 25),
-                    ("netherlands", "EURONEXT", ".AS", 15),
-                    ("spain", "BME", ".MC", 15),
-                    ("italy", "MIL", ".MI", 15),
+                for reg, exch_yf, suffisso, top_n in [
+                    ("de", "GER", ".DE", 25),
+                    ("fr", "PAR", ".PA", 25),
+                    ("nl", "AMS", ".AS", 15),
+                    ("es", "MCE", ".MC", 15),
+                    ("it", "MIL", ".MI", 15),
                 ]:
-                    payload_m = {
-                        "filter": [
-                            {"left": "exchange", "operation": "equal", "right": exch_eu},
-                            {"left": "type", "operation": "equal", "right": "stock"}
-                        ],
-                        "columns": ["name", "market_cap_basic"],
-                        "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                        "range": [0, top_n]
-                    }
-                    r_m = requests.post(f"https://tradingview.com{paese}/scan", json=payload_m, timeout=12)
-                    r_m.raise_for_status()
-                    for item in r_m.json().get("data", []):
-                        d = item.get("d", [])
-                        if len(d) >= 2 and d[0]:
-                            combinati.append((f"{str(d[0]).strip().replace('.', '-')}{suffisso}", float(d[1] or 0)))
-                combinati.sort(key=lambda x: x[1], reverse=True)
+                    q_m = yf.EquityQuery("and", [
+                        yf.EquityQuery("eq", ["region", reg]),
+                        yf.EquityQuery("eq", ["exchange", exch_yf])
+                    ])
+                    res_m = yf.screen(q_m, size=top_n + 5, sortField="intradaymarketcap", sortAsc=False)
+                    for q in (res_m.get("quotes", []) if isinstance(res_m, dict) else []):
+                        sym = str(q.get("symbol", "")).strip()
+                        if sym.endswith(suffisso):
+                            combinati.append((sym, float(q.get("marketCap", 0) or 0)))
+                combinati.sort(key=lambda x: x, reverse=True)
                 limite_eu = 50 if "50" in borsa_indice else 100
                 selezionati = list(dict.fromkeys([s for s, _ in combinati]))[:limite_eu]
-                return ",".join(selezionati), f"🌐 Live {borsa_indice} ({len(selezionati)} titoli)"
-
+                return ",".join(selezionati), f"🌐 Live Yahoo Screener {borsa_indice} ({len(selezionati)} titoli)"
 
         # 4. CRYPTO (Endpoint Ufficiale CoinPaprika Tickers — Top 2.000 per Market Cap, Zero API Key)
         elif "Crypto" in macro_mercato:
