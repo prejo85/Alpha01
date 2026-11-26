@@ -541,6 +541,7 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
 @st.cache_data(ttl=1800, show_spinner=False)
 def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
     risultati_dd = []
+    record_mensili = []
 
     def _estrai_df_dd(df_raw, simbolo):
         if df_raw is None or df_raw.empty:
@@ -575,24 +576,61 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
             low_s = df_t["Low"].astype(float)
             high_s = df_t["High"].astype(float)
 
-            # Serie storica Underwater (Drawdown dal massimo precedente)
             roll_peak = high_s.cummax()
             dd_series = ((close_s - roll_peak) / roll_peak) * 100.0
             dd_intraday = ((low_s - roll_peak) / roll_peak) * 100.0
 
+            # Calcolo cicli di drawdown chiusi (durata in giorni di borsa fino al recupero del massimo)
+            durate_cicli = []
+            mese_durate = {m: [] for m in range(1, 13)}
+            in_dd = False
+            start_idx = 0
+            min_dd_ciclo = 0.0
+            mese_min_ciclo = 1
+
+            dd_vals = dd_series.values
+            mesi_idx = pd.to_datetime(df_t.index).month
+
+            for k in range(len(dd_vals)):
+                val_d = float(dd_vals[k])
+                if val_d < -0.5:
+                    if not in_dd:
+                        in_dd = True
+                        start_idx = k
+                        min_dd_ciclo = val_d
+                        mese_min_ciclo = int(mesi_idx[k])
+                    elif val_d < min_dd_ciclo:
+                        min_dd_ciclo = val_d
+                        mese_min_ciclo = int(mesi_idx[k])
+                else:
+                    if in_dd:
+                        dur_gg = k - start_idx
+                        if dur_gg >= 2 and min_dd_ciclo <= -2.0:
+                            durate_cicli.append(dur_gg)
+                            mese_durate[mese_min_ciclo].append(dur_gg)
+                        in_dd = False
+
+            # Statistiche mensili del singolo titolo
+            df_tmp_m = pd.DataFrame({"Mese": mesi_idx, "DD": dd_vals})
+            for m_num in range(1, 13):
+                sub_m = df_tmp_m[df_tmp_m["Mese"] == m_num]["DD"]
+                if not sub_m.empty:
+                    rec_gg = float(np.mean(mese_durate[m_num])) if len(mese_durate[m_num]) > 0 else np.nan
+                    record_mensili.append({
+                        "Mese_Num": m_num,
+                        "DD_Medio": float(sub_m.mean()),
+                        "DD_Peggiore": float(sub_m.min()),
+                        "Giorni_Recupero": rec_gg
+                    })
+
             dd_attuale = float(dd_series.iloc[-1])
             max_dd = float(dd_intraday.min())
             dd_mediano = float(dd_series.median())
-            dd_p75 = float(np.percentile(dd_series, 25))  # 25° pct dei valori negativi = 75° pct di severità DD
-            dd_p90 = float(np.percentile(dd_series, 10))  # 90° pct di severità DD
-
-            # Percentile di severità del DD attuale rispetto alla storia del titolo (0-100%)
+            dd_p75 = float(np.percentile(dd_series, 25))
+            dd_p90 = float(np.percentile(dd_series, 10))
             severita_pct = float((dd_series >= dd_attuale).mean() * 100.0)
-
-            # Ulcer Index (radice della media dei quadrati dei drawdown: misura profondità + durata)
             ulcer_idx = float(np.sqrt(np.mean(np.square(dd_series))))
 
-            # Giorni consecutivi attuali sotto il massimo (Time Underwater)
             sotto_picco = (close_s < roll_peak).values
             giorni_uw = 0
             for flag in reversed(sotto_picco):
@@ -601,14 +639,14 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
                 else:
                     break
 
-            # Rendimento medio forward a 60 e 90 giorni quando il titolo si trovava in zona DD >= 75° pct
+            durata_media_rec = int(round(np.mean(durate_cicli))) if len(durate_cicli) > 0 else 0
+            gg_stimati_mancanti = max(0, durata_media_rec - giorni_uw) if dd_attuale < -0.5 else 0
+
             fwd_60 = ((close_s.shift(-60) - close_s) / close_s) * 100.0
             fwd_90 = ((close_s.shift(-90) - close_s) / close_s) * 100.0
             mask_zona_dd = dd_series <= dd_p75
             ret_60_post = float(fwd_60[mask_zona_dd].dropna().mean()) if mask_zona_dd.sum() > 5 else np.nan
             ret_90_post = float(fwd_90[mask_zona_dd].dropna().mean()) if mask_zona_dd.sum() > 5 else np.nan
-
-            # Leva massima prudenziale suggerita (basata sul 90° percentile di DD per evitare margin call)
             leva_sicura = round(min(10.0, 50.0 / max(5.0, abs(dd_p90))), 1)
 
             if severita_pct >= 85.0:
@@ -630,13 +668,36 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
                 "Max DD Storico %": round(max_dd, 2),
                 "Ulcer Index": round(ulcer_idx, 2),
                 "Giorni Underwater": int(giorni_uw),
+                "Recupero Storico Medio (gg)": durata_media_rec,
+                "Giorni Stimati al Recupero": gg_stimati_mancanti,
                 "Ret. Medio 60g Post-DD %": round(ret_60_post, 2) if not np.isnan(ret_60_post) else None,
                 "Ret. Medio 90g Post-DD %": round(ret_90_post, 2) if not np.isnan(ret_90_post) else None,
                 "Leva Max Sicura": f"{leva_sicura}x",
                 "Regime Drawdown": stato_dd
             })
 
-    return pd.DataFrame(risultati_dd)
+    df_titoli_out = pd.DataFrame(risultati_dd)
+    if record_mensili:
+        nomi_mesi = {
+            1: "01 - Gennaio", 2: "02 - Febbraio", 3: "03 - Marzo", 4: "04 - Aprile",
+            5: "05 - Maggio", 6: "06 - Giugno", 7: "07 - Luglio", 8: "08 - Agosto",
+            9: "09 - Settembre", 10: "10 - Ottobre", 11: "11 - Novembre", 12: "12 - Dicembre"
+        }
+        df_m_raw = pd.DataFrame(record_mensili)
+        df_mesi_out = df_m_raw.groupby("Mese_Num", as_index=False).agg(
+            DD_Medio_Pct=("DD_Medio", "mean"),
+            DD_Peggiore_Pct=("DD_Peggiore", "min"),
+            Giorni_Medi_Recupero=("Giorni_Recupero", "mean")
+        )
+        df_mesi_out["Mese"] = df_mesi_out["Mese_Num"].map(nomi_mesi)
+        df_mesi_out["DD_Medio_Pct"] = df_mesi_out["DD_Medio_Pct"].round(2)
+        df_mesi_out["DD_Peggiore_Pct"] = df_mesi_out["DD_Peggiore_Pct"].round(2)
+        df_mesi_out["Giorni_Medi_Recupero"] = df_mesi_out["Giorni_Medi_Recupero"].fillna(0).round(0).astype(int)
+        df_mesi_out = df_mesi_out[["Mese", "DD_Medio_Pct", "DD_Peggiore_Pct", "Giorni_Medi_Recupero"]].sort_values(by="DD_Medio_Pct", ascending=True).reset_index(drop=True)
+    else:
+        df_mesi_out = pd.DataFrame()
+
+    return df_titoli_out, df_mesi_out
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -1460,8 +1521,8 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
         ### 🧠 Perché studiare i Drawdown prima di entrare a mercato?
         Un calo del **-15%** su un'azione difensiva o sull'S&P 500 è un evento raro e profittevole da comprare; lo stesso **-15%** su una crypto o su un titolo tech volatile è semplice rumore quotidiano.
         * **📊 Severità Storica (Percentile):** Ti dice se il drawdown di oggi è peggiore del 75%–90% delle giornate storiche di quel preciso asset (*zona di eccesso statistico*).
-        * **🌊 Ulcer Index:** Misura lo stress psicologico e finanziario combinando **quanto scende** il prezzo e **per quanti giorni resta sotto i massimi**. Più è basso, più il trend del paniere è regolare.
-        * **🚀 Ret. Medio 60g / 90g Post-DD:** Mostra quanto ha reso in media acquistare quel titolo ogni volta che entrava nel quartile peggiore dei suoi drawdown.
+        * **📅 Stagionalità Mensile:** Individua in quali mesi dell'anno il paniere soffre i ritracciamenti peggiori e quanti giorni di borsa impiega mediamente a recuperarli.
+        * **⏱️ Giorni Stimati al Recupero:** Confronta i giorni già trascorsi sotto il picco con la durata media storica dei cali di quel singolo titolo.
         * **⚖️ Leva Max Sicura (Futures / CFD):** Calcola la leva massima sostenibile affinché un ritracciamento al **90° percentile storico** non eroda più del 50% del margine allocato.
         """)
 
@@ -1491,14 +1552,22 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
 
     if st.button("📊 Calcola Statistiche Drawdown su Tutto il Paniere", type="primary", use_container_width=True, key="btn_run_dd_study"):
         lista_dd_target = [t.strip().upper() for t in (dd_custom_tk if dd_custom_tk.strip() else dd_tickers_str).split(",") if t.strip()]
-        with st.spinner(f"Elaborazione serie storiche e distribuzione drawdown su {len(lista_dd_target)} strumenti ({dd_per_lbl})..."):
-            st.session_state["df_dd_study_cache"] = calcola_stats_drawdown_paniere(lista_dd_target, periodo_storico=dd_per_val)
+        with st.spinner(f"Elaborazione serie storiche, stagionalità mensile e recovery su {len(lista_dd_target)} strumenti ({dd_per_lbl})..."):
+            df_t_res, df_m_res = calcola_stats_drawdown_paniere(lista_dd_target, periodo_storico=dd_per_val)
+            st.session_state["df_dd_study_cache"] = df_t_res
+            st.session_state["df_dd_months_cache"] = df_m_res
             st.session_state["dd_study_title"] = f"{dd_borsa} ({dd_per_lbl})"
     # ==========================================================================
     # TAB 03: STUDIO STATISTICO DRAWDOWN & FUTURES (PARTE 2/4)
     # ==========================================================================
     if "df_dd_study_cache" in st.session_state and not st.session_state["df_dd_study_cache"].empty:
         df_dd_res = st.session_state["df_dd_study_cache"].copy()
+        df_dd_months = st.session_state.get("df_dd_months_cache", pd.DataFrame())
+
+        if "Giorni Stimati al Recupero" not in df_dd_res.columns:
+            del st.session_state["df_dd_study_cache"]
+            st.info("🔄 Aggiornamento struttura calcolo: clicca di nuovo su **Calcola Statistiche Drawdown su Tutto il Paniere**.")
+            st.stop()
 
         st.markdown(f"##### 🌐 Sintesi Statistica Paniere: **{st.session_state.get('dd_study_title', '')}** ({len(df_dd_res)} strumenti)")
         kpi_d1, kpi_d2, kpi_d3, kpi_d4 = st.columns(4)
@@ -1507,11 +1576,63 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
         with kpi_d2:
             st.metric("Max DD Storico Medio", f"{df_dd_res['Max DD Storico %'].mean():.2f}%", f"Peggiore: {df_dd_res['Max DD Storico %'].min():.2f}%")
         with kpi_d3:
-            st.metric("Ulcer Index Medio", f"{df_dd_res['Ulcer Index'].mean():.2f}", "Più basso = trend più pulito")
+            st.metric("Recupero Storico Medio", f"{int(df_dd_res['Recupero Storico Medio (gg)'].mean())} gg", "Giorni di borsa fino all'ATH")
         with kpi_d4:
             ret90_avg = df_dd_res["Ret. Medio 90g Post-DD %"].dropna().mean()
             st.metric("Rimbalzo Medio 90g Post-DD", f"{ret90_avg:+.2f}%" if not np.isnan(ret90_avg) else "N/D", "Dopo ingresso in zona 75° pct")
 
+        if not df_dd_months.empty:
+            st.markdown("---")
+            st.markdown("##### 📅 Stagionalità Mensile: Mesi con Drawdown Maggiore & Tempo Medio di Recupero")
+            m_col_sx, m_col_dx = st.columns([1.35, 1.0])
+            with m_col_sx:
+                fig_m_dd = make_subplots(specs=[[{"secondary_y": True}]])
+                fig_m_dd.add_trace(
+                    grp.Bar(
+                        x=df_dd_months["Mese"],
+                        y=df_dd_months["DD_Medio_Pct"],
+                        name="DD Medio Mensile (%)",
+                        marker_color="#ef4444",
+                        opacity=0.8
+                    ),
+                    secondary_y=False
+                )
+                fig_m_dd.add_trace(
+                    grp.Scatter(
+                        x=df_dd_months["Mese"],
+                        y=df_dd_months["Giorni_Medi_Recupero"],
+                        name="Giorni Medi Recupero",
+                        mode="lines+markers",
+                        line=dict(color="#38bdf8", width=2.5),
+                        marker=dict(size=8)
+                    ),
+                    secondary_y=True
+                )
+                fig_m_dd.update_layout(
+                    template="plotly_dark",
+                    height=330,
+                    margin=dict(l=15, r=15, t=20, b=15),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                fig_m_dd.update_yaxes(title_text="Drawdown Medio (%)", secondary_y=False)
+                fig_m_dd.update_yaxes(title_text="Giorni Borsa Recupero", secondary_y=True)
+                st.plotly_chart(fig_m_dd, use_container_width=True, key="chart_stagionalita_dd_mesi")
+
+            with m_col_dx:
+                st.dataframe(
+                    df_dd_months.rename(columns={
+                        "DD_Medio_Pct": "DD Medio %",
+                        "DD_Peggiore_Pct": "Picco Peggiore %",
+                        "Giorni_Medi_Recupero": "Recupero Medio (gg)"
+                    }),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=330
+                )
+        st.markdown("---")
+        # ======================================================================
+        # TAB 03: STUDIO STATISTICO DRAWDOWN & FUTURES (PARTE 3/4)
+        # ======================================================================
         fd1, fd2 = st.columns(2)
         with fd1:
             min_sev_dd = st.slider(
@@ -1526,26 +1647,27 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
                 [
                     "Severità Storica (Pct) (Più estremi prima)",
                     "DD Attuale % (Più profondi prima)",
+                    "Giorni Stimati al Recupero (Più rapidi prima)",
                     "Ret. Medio 90g Post-DD % (Miglior rimbalzo storico)",
                     "Ulcer Index (Più stabili prima)"
                 ],
                 key="sel_sort_dd_study"
             )
-        # ======================================================================
-        # TAB 03: STUDIO STATISTICO DRAWDOWN & FUTURES (PARTE 3/4)
-        # ======================================================================
+
         df_dd_view = df_dd_res[df_dd_res["Severità Storica (Pct)"] >= min_sev_dd].copy()
         if "Severità" in sort_dd_col:
             df_dd_view = df_dd_view.sort_values(by="Severità Storica (Pct)", ascending=False)
         elif "DD Attuale" in sort_dd_col:
             df_dd_view = df_dd_view.sort_values(by="DD Attuale %", ascending=True)
+        elif "Giorni Stimati" in sort_dd_col:
+            df_dd_view = df_dd_view.sort_values(by="Giorni Stimati al Recupero", ascending=True)
         elif "Ret. Medio" in sort_dd_col:
             df_dd_view = df_dd_view.sort_values(by="Ret. Medio 90g Post-DD %", ascending=False, na_position="last")
         else:
             df_dd_view = df_dd_view.sort_values(by="Ulcer Index", ascending=True)
         df_dd_view = df_dd_view.reset_index(drop=True)
 
-        st.caption("💡 Clicca su una riga della tabella per visualizzare la **Curva Underwater Storica**, l'**Istogramma dei Drawdown** e inviare il titolo a **TradingView Pro**.")
+        st.caption("💡 Clicca su una riga della tabella per visualizzare la **Curva Underwater Storica**, i **Giorni Mancanti al Recupero** e inviare il titolo a **TradingView Pro**.")
         ev_dd_tab = st.dataframe(
             df_dd_view,
             use_container_width=True,
@@ -1612,6 +1734,30 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
                 fig_uw.update_layout(template="plotly_dark", height=620, margin=dict(l=20, r=20, t=35, b=20), showlegend=False)
                 st.plotly_chart(fig_uw, use_container_width=True, key=f"uw_chart_{tk_dd_focus}")
 
+                # RIEPILOGO TEMPI DI RECUPERO DEL TITOLO SELEZIONATO SOTTO I GRAFICI
+                gg_attuali_uw = int(riga_sel["Giorni Underwater"])
+                gg_storici_rec = int(riga_sel["Recupero Storico Medio (gg)"])
+                gg_mancanti_rec = int(riga_sel["Giorni Stimati al Recupero"])
+                dd_oggi_val = float(riga_sel["DD Attuale %"])
+                picco_da_rec = float(peak_foc.iloc[-1])
+                prezzo_oggi_foc = float(c_foc.iloc[-1])
+                rialzo_necessario = ((picco_da_rec - prezzo_oggi_foc) / prezzo_oggi_foc) * 100.0 if prezzo_oggi_foc > 0 else 0.0
+
+                st.markdown(f"##### ⏱️ Stima Orizzonte di Recupero del Drawdown Attuale ({tk_dd_focus})")
+                rc1, rc2, rc3, rc4 = st.columns(4)
+                with rc1:
+                    st.metric("Giorni Già Trascorsi Sotto il Picco", f"{gg_attuali_uw} gg", f"DD attuale: {dd_oggi_val:.2f}%")
+                with rc2:
+                    st.metric("Durata Media Storica dei Cali", f"{gg_storici_rec} gg", "Media cicli DD > 2%")
+                with rc3:
+                    if abs(dd_oggi_val) <= 0.5:
+                        st.metric("Giorni Stimati al Recupero", "0 gg (Sui Massimi)", "✅ Nessun drawdown attivo")
+                    elif gg_mancanti_rec > 0:
+                        st.metric("Giorni Borsa Stimati al Recupero", f"~ {gg_mancanti_rec} gg", f"Circa {round(gg_mancanti_rec / 21, 1)} mesi")
+                    else:
+                        st.metric("Giorni Borsa Stimati al Recupero", "Oltre la media (+)", f"Già oltre di {gg_attuali_uw - gg_storici_rec} gg")
+                with rc4:
+                    st.metric("Target Prezzo Recupero (ATH)", f"{picco_da_rec:.2f}", f"+{rialzo_necessario:.2f}% per tornare in pari")
 
 # ==============================================================================
 # TAB 19: TRADINGVIEW PRO QUANTITATIVO (PARTE 1/5 - CONTROLLI & STRUMENTI)
