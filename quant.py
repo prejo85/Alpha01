@@ -354,46 +354,57 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                 out.append(sym_clean)
         return out
 
-    try:        # 1. USA (Endpoint Ufficiale NASDAQ Screener API)
+    try:       
+        # 1. USA (100% Endpoint Ufficiale NASDAQ Screener API — Zero Wikipedia/read_html)
         if "USA" in macro_mercato:
             headers_nq = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 "Accept": "application/json, text/plain, */*",
-                "Origin": "https://www.nasdaq.com",
-                "Referer": "https://www.nasdaq.com/"
+                "Origin": "https://nasdaq.com",
+                "Referer": "https://nasdaq.com/"
             }
 
             if borsa_indice == "S&P 500":
-                resp_sp = requests.get("https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&offset=0&download=true", headers=headers_nq, timeout=12)
-                if resp_sp.status_code == 200:
-                    tables = pd.read_html(resp_sp.text)
-                    sp_syms = [str(s).strip().replace(".", "-") for s in tables[0]["Symbol"].tolist()]
+                url_sp = "https://nasdaq.com"
+                res = requests.get(url_sp, headers=headers_nq, timeout=15)
+                if res.status_code == 200:
+                    rows_all = res.json().get("data", {}).get("rows", [])
+                    cand = []
+                    for r in rows_all:
+                        sym = str(r.get("symbol", "")).strip()
+                        if not sym or "^" in sym or "/" in sym or "." in sym or len(sym) > 5:
+                            continue
+                        mc = _parse_market_cap(r.get("marketCap", "0"))
+                        if mc > 0:
+                            cand.append((sym, mc))
+                    cand.sort(key=lambda x: x[1], reverse=True)
+                    top_500 = cand[:500]
                     if "Large Cap" in cap_scelta:
-                        res_us = requests.get("https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&offset=0&download=true", headers=headers_nq, timeout=15)
-                        if res_us.status_code == 200:
-                            mc_map = {str(r.get("symbol", "")).strip().replace(".", "-"): _parse_market_cap(r.get("marketCap", "0")) for r in res_us.json().get("data", {}).get("rows", [])}
-                            sp_syms = [s for s in sp_syms if mc_map.get(s, 0) >= 10_000_000_000]
-                    if len(sp_syms) > 20:
-                        return ",".join(sp_syms), f"🌐 Live S&P 500 ({len(sp_syms)} titoli)"
+                        selezionati = [s for s, mc in top_500 if mc >= 10_000_000_000]
+                    else:
+                        selezionati = [s for s, _ in top_500]
+                    if len(selezionati) > 20:
+                        return ",".join(selezionati), f"🌐 Live S&P 500 ({len(selezionati)} titoli)"
+                motivo_err = f"HTTP {res.status_code}"
 
             elif borsa_indice == "NASDAQ 100":
                 res_nq100 = requests.get("https://nasdaq.com", headers=headers_nq, timeout=12)
                 if res_nq100.status_code == 200:
                     rows_nq = res_nq100.json().get("data", {}).get("data", {}).get("rows", [])
-                    nq_syms = [str(r.get("symbol", "")).strip().replace(".", "-") for r in rows_nq if r.get("symbol")]
+                    nq_syms = [str(r.get("symbol", "")).strip() for r in rows_nq if r.get("symbol")]
                     if len(nq_syms) >= 90:
                         return ",".join(nq_syms), f"🌐 Live NASDAQ 100 ({len(nq_syms)} titoli)"
+                motivo_err = f"HTTP {res_nq100.status_code}"
 
             else:
                 exch_param = "&exchange=NASDAQ" if "NASDAQ" in borsa_indice else ("&exchange=NYSE" if "NYSE" in borsa_indice else "")
-                url_us = f"https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&offset=0{exch_param}&download=true"
+                url_us = f"https://nasdaq.com{exch_param}&download=true"
                 res = requests.get(url_us, headers=headers_nq, timeout=15)
                 if res.status_code == 200:
                     selezionati = _filtra_cap_usa(res.json().get("data", {}).get("rows", []))
                     if len(selezionati) > 15:
                         return ",".join(selezionati), f"🌐 Live {borsa_indice} ({len(selezionati)} titoli)"
                 motivo_err = f"HTTP {res.status_code}"
-
 
         # 2. ITALIA
         elif "Italia" in macro_mercato:
