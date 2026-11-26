@@ -838,7 +838,12 @@ if scelta_modulo == "📁 Analisi Triple-POC":
 
     col2, col3, col4 = st.columns(3)
     with col2:
-        asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"], index=st.session_state.asset_type_index, key="an_type")
+        tickers_input = st.text_input(
+            "Ticker specifici (vuoto = tutto il paniere):",
+            value="",
+            placeholder="Es: AAPL, NVDA o BTC-USD",
+            key=f"an_area_{paniere_selezionato}"
+        )
     with col3:
         period_label = st.selectbox("Estensione Profilo Recente:", ["3 Mesi", "6 Mesi", "9 Mesi"], key="an_period")
         g3 = {"3 Mesi": 90, "6 Mesi": 180, "9 Mesi": 270}[period_label]
@@ -846,7 +851,14 @@ if scelta_modulo == "📁 Analisi Triple-POC":
         tf_label = st.selectbox("Timeframe Candele:", ["Giornaliero (Daily)", "Settimanale (Weekly)"], key="an_timeframe")
         tf_attivo = {"Giornaliero (Daily)": "1d", "Settimanale (Weekly)": "1wk"}[tf_label]
 
-    tickers_input = st.text_area("Tickers specifici (lascia vuoto per scansionare automaticamente il paniere selezionato):", value="", height=80, key=f"an_area_{paniere_selezionato}")
+    # Determina automaticamente il tipo asset senza bisogno del menu a tendina
+    if tickers_input.strip():
+        primo_tk = tickers_input.split(",").strip().upper()
+        asset_type = "Criptovaluta" if primo_tk.endswith("-USD") else "Azione"
+    else:
+        asset_type = "Criptovaluta" if "Crypto" in macro_scelto else "Azione"
+
+
 
     if st.button("🌐 Scansiona Tutto il Paniere & Calcola i 3 POC", type="secondary", use_container_width=True):
         lista_target = [t.strip().upper() for t in (tickers_input if tickers_input.strip() else ticker_caricati).split(",") if t.strip()]
