@@ -447,40 +447,37 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
             if len(tutti_eu) >= 15:
                 return ",".join(tutti_eu), f"🌐 Live {borsa_indice} ({len(tutti_eu)} titoli)"
 
-        # 4. CRYPTO (CoinCap API senza limiti + Fallback CoinGecko)
+        # 4. CRYPTO (API Diretta Binance Public Ticker 24h — Zero API Key)
         elif "Crypto" in macro_mercato:
-            stable = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "STETH", "WSTETH", "WBTC", "BUSD", "USDS", "CBBTC", "USD1", "PYUSD", "FRAX", "USDD"}
-            coins = []
+            stable = {
+                "USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "BUSD", "USDS",
+                "PYUSD", "FRAX", "USDD", "EUR", "AEUR", "EURI", "WBTC", "STETH", "WSTETH"
+            }
+            url_bn = "https://binance.com"
+            res_bn = requests.get(url_bn, timeout=12)
+            if res_bn.status_code == 200:
+                dati_bn = res_bn.json()
+                # Filtra solo le coppie xxxUSDT attive e ordina per volume 24h in USD decrescente
+                coppie_usdt = []
+                for item in dati_bn:
+                    sym_pair = str(item.get("symbol", ""))
+                    if sym_pair.endswith("USDT"):
+                        base = sym_pair[:-4]
+                        vol_usd = float(item.get("quoteVolume", 0) or 0)
+                        if base and base not in stable and vol_usd > 100_000 and not base.endswith(("UP", "DOWN", "BULL", "BEAR")):
+                            coppie_usdt.append((f"{base}-USD", vol_usd))
 
-            # Tentativo 1: CoinCap API (fino a 300 crypto, nessun blocco 429)
-            try:
-                res_cc = requests.get("https://coincap.io", timeout=12)
-                if res_cc.status_code == 200:
-                    data_cc = res_cc.json().get("data", [])
-                    coins = [f"{c['symbol'].upper()}-USD" for c in data_cc if c.get("symbol", "").upper() not in stable]
-                    coins = list(dict.fromkeys(coins))
-            except Exception:
-                pass
+                coppie_usdt.sort(key=lambda x: x, reverse=True)
+                coins = [c for c, _ in coppie_usdt]
 
-            # Tentativo 2: CoinGecko (se CoinCap non risponde)
-            if len(coins) < 50:
-                url_cg = "https://coingecko.com"
-                params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 250, "page": 1}
-                res = requests.get(url_cg, params=params, headers=headers_nq, timeout=12)
-                if res.status_code == 200:
-                    coins = [f"{c['symbol'].upper()}-USD" for c in res.json() if c.get("symbol", "").upper() not in stable]
-                    coins = list(dict.fromkeys(coins))
-                else:
-                    motivo_err = f"CG HTTP {res.status_code}"
-
-            if len(coins) >= 50:
-                if "TOTAL 1 & 2" in borsa_indice:
-                    lista_c = coins[:30]
-                else:
-                    # TOTAL 3: tutte le Altcoins dal rank 31 fino alla 280 (esclusi BTC, ETH e Top 30)
-                    lista_c = coins[30:280]
-                return ",".join(lista_c), f"🌐 Live Crypto ({len(lista_c)} asset)"
-
+                if len(coins) >= 50:
+                    if "TOTAL 1 & 2" in borsa_indice:
+                        lista_c = coins[:30]
+                    else:
+                        # TOTAL 3: tutte le Altcoin dalla #31 fino alla #280
+                        lista_c = coins[30:280]
+                    return ",".join(lista_c), f"🌐 Live Binance API ({len(lista_c)} crypto)"
+            motivo_err = f"BN HTTP {res_bn.status_code}"
 
     except Exception as ex:
         motivo_err = str(ex)[:40]
