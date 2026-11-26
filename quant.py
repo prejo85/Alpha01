@@ -364,7 +364,7 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
             }
 
             if borsa_indice == "S&P 500":
-                resp_sp = requests.get("https://wikipedia.org", headers=headers_nq, timeout=12)
+                resp_sp = requests.get("https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&offset=0&download=true", headers=headers_nq, timeout=12)
                 if resp_sp.status_code == 200:
                     tables = pd.read_html(resp_sp.text)
                     sp_syms = [str(s).strip().replace(".", "-") for s in tables[0]["Symbol"].tolist()]
