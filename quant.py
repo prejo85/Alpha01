@@ -853,12 +853,10 @@ if scelta_modulo == "📁 Analisi Triple-POC":
 
     # Determina automaticamente il tipo asset senza bisogno del menu a tendina
     if tickers_input.strip():
-        primo_tk = tickers_input.split(",").strip().upper()
+        primo_tk = tickers_input.split(",")[0].strip().upper()
         asset_type = "Criptovaluta" if primo_tk.endswith("-USD") else "Azione"
     else:
         asset_type = "Criptovaluta" if "Crypto" in macro_scelto else "Azione"
-
-
 
     if st.button("🌐 Scansiona Tutto il Paniere & Calcola i 3 POC", type="secondary", use_container_width=True):
         lista_target = [t.strip().upper() for t in (tickers_input if tickers_input.strip() else ticker_caricati).split(",") if t.strip()]
