@@ -447,19 +447,40 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
             if len(tutti_eu) >= 15:
                 return ",".join(tutti_eu), f"🌐 Live {borsa_indice} ({len(tutti_eu)} titoli)"
 
-        # 4. CRYPTO
+        # 4. CRYPTO (CoinCap API senza limiti + Fallback CoinGecko)
         elif "Crypto" in macro_mercato:
-            url_cg = "https://coingecko.com"
-            params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 250, "page": 1}
-            res = requests.get(url_cg, params=params, headers=headers_nq, timeout=12)
-            if res.status_code == 200:
-                stable = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "STETH", "WSTETH", "WBTC", "BUSD", "USDS", "CBBTC"}
-                coins = [f"{c['symbol'].upper()}-USD" for c in res.json() if c.get("symbol", "").upper() not in stable]
-                coins = list(dict.fromkeys(coins))
-                lista_c = coins[:30] if "TOTAL 1 & 2" in borsa_indice else coins[30:220]
-                if len(lista_c) >= 15:
-                    return ",".join(lista_c), f"🌐 Live CoinGecko ({len(lista_c)} crypto)"
-            motivo_err = f"CG HTTP {res.status_code}"
+            stable = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "STETH", "WSTETH", "WBTC", "BUSD", "USDS", "CBBTC", "USD1", "PYUSD", "FRAX", "USDD"}
+            coins = []
+
+            # Tentativo 1: CoinCap API (fino a 300 crypto, nessun blocco 429)
+            try:
+                res_cc = requests.get("https://coincap.io", timeout=12)
+                if res_cc.status_code == 200:
+                    data_cc = res_cc.json().get("data", [])
+                    coins = [f"{c['symbol'].upper()}-USD" for c in data_cc if c.get("symbol", "").upper() not in stable]
+                    coins = list(dict.fromkeys(coins))
+            except Exception:
+                pass
+
+            # Tentativo 2: CoinGecko (se CoinCap non risponde)
+            if len(coins) < 50:
+                url_cg = "https://coingecko.com"
+                params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 250, "page": 1}
+                res = requests.get(url_cg, params=params, headers=headers_nq, timeout=12)
+                if res.status_code == 200:
+                    coins = [f"{c['symbol'].upper()}-USD" for c in res.json() if c.get("symbol", "").upper() not in stable]
+                    coins = list(dict.fromkeys(coins))
+                else:
+                    motivo_err = f"CG HTTP {res.status_code}"
+
+            if len(coins) >= 50:
+                if "TOTAL 1 & 2" in borsa_indice:
+                    lista_c = coins[:30]
+                else:
+                    # TOTAL 3: tutte le Altcoins dal rank 31 fino alla 280 (esclusi BTC, ETH e Top 30)
+                    lista_c = coins[30:280]
+                return ",".join(lista_c), f"🌐 Live Crypto ({len(lista_c)} asset)"
+
 
     except Exception as ex:
         motivo_err = str(ex)[:40]
