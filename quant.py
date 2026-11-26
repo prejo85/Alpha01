@@ -447,23 +447,45 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
             if len(tutti_eu) >= 15:
                 return ",".join(tutti_eu), f"🌐 Live {borsa_indice} ({len(tutti_eu)} titoli)"
 
-        # 4. CRYPTO TOTAL 1, TOTAL 2 & TOTAL 3 (Top 250 CoinGecko -> Yahoo -USD)
-        elif categoria.startswith("Crypto —"):
-            url_cg = "https://coingecko.com"
-            params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 250, "page": 1}
-            res = requests.get(url_cg, params=params, headers=headers_std, timeout=12)
-            if res.status_code == 200:
-                stable = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "STETH", "WSTETH", "WBTC", "BUSD", "USDS", "CBBTC"}
-                coins = [
-                    f"{c['symbol'].upper()}-USD"
-                    for c in res.json()
-                    if c.get("symbol", "").upper() not in stable
+        # 4. CRYPTO (Endpoint Ufficiale Coinbase Exchange US — Coppie -USD native)
+        elif "Crypto" in macro_mercato:
+            stable = {
+                "USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "BUSD", "USDS",
+                "PYUSD", "FRAX", "USDD", "EUR", "AEUR", "EURI", "WBTC", "STETH", "WSTETH",
+                "USD", "GBP", "CAD", "AUD", "JPY", "CHF", "GUSD", "PAX", "UST"
+            }
+            url_cb = "https://coinbase.com"
+            res_cb = requests.get(url_cb, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"}, timeout=12)
+            if res_cb.status_code == 200 and res_cb.text.strip():
+                prodotti = res_cb.json()
+                coins_raw = [
+                    p["id"] for p in prodotti
+                    if isinstance(p, dict)
+                    and p.get("quote_currency") == "USD"
+                    and p.get("status") == "online"
+                    and not p.get("trading_disabled", False)
+                    and p.get("base_currency", "") not in stable
                 ]
-                coins = list(dict.fromkeys(coins))
-                lista_c = coins[:30] if "TOTAL 1 & 2" in categoria else coins[30:220]
-                if len(lista_c) >= 15:
-                    return ",".join(lista_c), f"🌐 Live CoinGecko ({len(lista_c)} crypto)"
-            motivo_err = f"CG HTTP {res.status_code}"
+                top_order = [
+                    "BTC-USD", "ETH-USD", "XRP-USD", "SOL-USD", "DOGE-USD", "ADA-USD",
+                    "AVAX-USD", "LINK-USD", "SHIB-USD", "XLM-USD", "SUI-USD", "DOT-USD",
+                    "HBAR-USD", "BCH-USD", "UNI-USD", "LTC-USD", "NEAR-USD", "APT-USD",
+                    "ICP-USD", "PEPE-USD", "ETC-USD", "RENDER-USD", "POL-USD", "FET-USD",
+                    "VET-USD", "ATOM-USD", "ARB-USD", "FIL-USD", "OP-USD", "AAVE-USD"
+                ]
+                uniche = list(dict.fromkeys(coins_raw))
+                top_presenti = [c for c in top_order if c in uniche]
+                alt_presenti = [c for c in uniche if c not in top_presenti]
+                coins = top_presenti + alt_presenti
+
+                if len(coins) >= 50:
+                    if "TOTAL 1 & 2" in borsa_indice:
+                        lista_c = coins[:30]
+                    else:
+                        lista_c = coins[30:280]
+                    return ",".join(lista_c), f"🌐 Live Coinbase US API ({len(lista_c)} crypto)"
+            motivo_err = f"CB HTTP {res_cb.status_code}"
+
 
     except Exception as ex:
         motivo_err = str(ex)[:40]
