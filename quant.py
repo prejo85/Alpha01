@@ -447,45 +447,34 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
             if len(tutti_eu) >= 15:
                 return ",".join(tutti_eu), f"🌐 Live {borsa_indice} ({len(tutti_eu)} titoli)"
 
-        # 4. CRYPTO (Endpoint Ufficiale Coinbase Exchange US — Coppie -USD native)
+        # 4. CRYPTO (Endpoint Ufficiale CoinPaprika Tickers — Top 2.000 per Market Cap, Zero API Key)
         elif "Crypto" in macro_mercato:
             stable = {
                 "USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "BUSD", "USDS",
                 "PYUSD", "FRAX", "USDD", "EUR", "AEUR", "EURI", "WBTC", "STETH", "WSTETH",
-                "USD", "GBP", "CAD", "AUD", "JPY", "CHF", "GUSD", "PAX", "UST"
+                "CBBTC", "USD1", "USYC", "RLUSD"
             }
-            url_cb = "https://coinbase.com"
-            res_cb = requests.get(url_cb, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"}, timeout=12)
-            if res_cb.status_code == 200 and res_cb.text.strip():
-                prodotti = res_cb.json()
-                coins_raw = [
-                    p["id"] for p in prodotti
-                    if isinstance(p, dict)
-                    and p.get("quote_currency") == "USD"
-                    and p.get("status") == "online"
-                    and not p.get("trading_disabled", False)
-                    and p.get("base_currency", "") not in stable
-                ]
-                top_order = [
-                    "BTC-USD", "ETH-USD", "XRP-USD", "SOL-USD", "DOGE-USD", "ADA-USD",
-                    "AVAX-USD", "LINK-USD", "SHIB-USD", "XLM-USD", "SUI-USD", "DOT-USD",
-                    "HBAR-USD", "BCH-USD", "UNI-USD", "LTC-USD", "NEAR-USD", "APT-USD",
-                    "ICP-USD", "PEPE-USD", "ETC-USD", "RENDER-USD", "POL-USD", "FET-USD",
-                    "VET-USD", "ATOM-USD", "ARB-USD", "FIL-USD", "OP-USD", "AAVE-USD"
-                ]
-                uniche = list(dict.fromkeys(coins_raw))
-                top_presenti = [c for c in top_order if c in uniche]
-                alt_presenti = [c for c in uniche if c not in top_presenti]
-                coins = top_presenti + alt_presenti
+            url_cp = "https://api.coinpaprika.com/v1/tickers"
+            res_cp = requests.get(url_cp, headers={"Accept": "application/json"}, timeout=15)
+            if res_cp.status_code == 200:
+                dati_cp = res_cp.json()
+                # Ordina per rank ufficiale (1 = Bitcoin, 2 = Ethereum, ecc.) ed esclude stablecoin/wrapped
+                dati_cp.sort(key=lambda x: int(x.get("rank") or 999999))
+                coins = []
+                for c in dati_cp:
+                    sym = str(c.get("symbol", "")).strip().upper()
+                    if sym and sym not in stable and sym.isalnum():
+                        coins.append(f"{sym}-USD")
+                coins = list(dict.fromkeys(coins))
 
                 if len(coins) >= 50:
                     if "TOTAL 1 & 2" in borsa_indice:
                         lista_c = coins[:30]
                     else:
+                        # TOTAL 3: tutte le Altcoins dal rank #31 al #280
                         lista_c = coins[30:280]
-                    return ",".join(lista_c), f"🌐 Live Coinbase US API ({len(lista_c)} crypto)"
-            motivo_err = f"CB HTTP {res_cb.status_code}"
-
+                    return ",".join(lista_c), f"🌐 Live CoinPaprika API ({len(lista_c)} crypto)"
+            motivo_err = f"CP HTTP {res_cp.status_code}"
 
     except Exception as ex:
         motivo_err = str(ex)[:40]
