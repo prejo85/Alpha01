@@ -277,62 +277,28 @@ FALLBACK_CRYPTO = (
     "MKR-USD,SNX-USD,COMP-USD,DYDX-USD,ENS-USD,1INCH-USD,ZEC-USD,DASH-USD,KAVA-USD,CELO-USD,BAT-USD,ZIL-USD,ENJ-USD"
 )
 
-
-def _parse_market_cap(val_raw):
-    s = str(val_raw).replace("$", "").replace(",", "").strip().upper()
-    if not s or s in ("NA", "N/A", "NONE", "-"):
-        return 0.0
-    mult = 1.0
-    if s.endswith("T"):
-        mult = 1_000_000_000_000.0
-        s = s[:-1]
-    elif s.endswith("B"):
-        mult = 1_000_000_000.0
-        s = s[:-1]
-    elif s.endswith("M"):
-        mult = 1_000_000.0
-        s = s[:-1]
-    elif s.endswith("K"):
-        mult = 1_000.0
-        s = s[:-1]
+def _parse_market_cap(val):
     try:
-        return float(s) * mult
+        if val is None or val == "" or str(val).upper() in ("NA", "N/A", "NONE"):
+            return 0.0
+        s = str(val).replace("$", "").replace(",", "").strip().upper()
+        if s.endswith("T"):
+            return float(s[:-1]) * 1e12
+        if s.endswith("B"):
+            return float(s[:-1]) * 1e9
+        if s.endswith("M"):
+            return float(s[:-1]) * 1e6
+        return float(s)
     except Exception:
         return 0.0
 
-GERARCHIA_MERCATI = {
-    "🇺🇸 USA": {
-        "S&P 500": ["Large Cap (>10B)", "Tutte (500 titoli)"],
-        "NASDAQ (Tutti / Tech)": ["Large Cap (>10B)", "Mid Cap (2B–10B)", "Small Cap (300M–2B)"],
-        "NASDAQ 100": ["Large Cap (>10B)"],
-        "NYSE (New York Stock Exchange)": ["Large Cap (>10B)", "Mid Cap (2B–10B)", "Small Cap (300M–2B)"],
-    },
-    "🇮🇹 Italia (Borsa Italiana)": {
-        "FTSE MIB": ["Large Cap (>10B)"],
-        "FTSE Italia Mid Cap": ["Mid Cap (2B–10B)"],
-        "FTSE Italia Small Cap": ["Small Cap (300M–2B)"],
-        "Tutte (.MI Completo)": ["Tutte le Cap"],
-    },
-    "🇪🇺 Europa": {
-        "EURO STOXX 50": ["Large Cap (>10B)"],
-        "DAX 40 (Germania .DE)": ["Large Cap (>10B)"],
-        "CAC 40 (Francia .PA)": ["Large Cap (>10B)"],
-        "IBEX 35 (Spagna .MC)": ["Large Cap (>10B)"],
-        "AEX 25 (Olanda .AS)": ["Large Cap (>10B)"],
-        "Europa Top 300 (Combinato)": ["Large Cap (>10B)"],
-    },
-    "🪙 Crypto": {
-        "TOTAL 1 & 2 (Top 30)": ["Large Cap (>10B)"],
-        "TOTAL 3 Altcoins (Rank 31–200)": ["Mid / Small Cap"],
-    }
-}
-
-
 @st.cache_data(ttl=86400, show_spinner=False)
 def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
-    headers_std = {
+    headers_nq = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*"
+        "Accept": "application/json, text/plain, */*",
+        "Origin": "https://www.nasdaq.com",
+        "Referer": "https://www.nasdaq.com/"
     }
     motivo_err = ""
 
@@ -340,32 +306,24 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
         out = []
         for r in rows_list:
             sym = str(r.get("symbol", "")).strip()
-            if not sym or "^" in sym or "/" in sym or len(sym) > 5:
+            if not sym or "^" in sym or "/" in sym or "." in sym or len(sym) > 5:
                 continue
             mc = _parse_market_cap(r.get("marketCap", "0"))
-            sym_clean = sym.replace(".", "-")
             if "Large Cap" in cap_scelta and mc >= 10_000_000_000:
-                out.append(sym_clean)
+                out.append(sym)
             elif "Mid Cap" in cap_scelta and 2_000_000_000 <= mc < 10_000_000_000:
-                out.append(sym_clean)
+                out.append(sym)
             elif "Small Cap" in cap_scelta and 300_000_000 <= mc < 2_000_000_000:
-                out.append(sym_clean)
+                out.append(sym)
             elif "Tutte" in cap_scelta:
-                out.append(sym_clean)
-        return out
+                out.append(sym)
+        return list(dict.fromkeys(out))
 
-    try:       
-        # 1. USA (100% Endpoint Ufficiale NASDAQ Screener API — Zero Wikipedia/read_html)
+    try:
+        # 1. USA — Usa esclusivamente l'endpoint ufficiale NASDAQ Screener
         if "USA" in macro_mercato:
-            headers_nq = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "Accept": "application/json, text/plain, */*",
-                "Origin": "https://nasdaq.com",
-                "Referer": "https://nasdaq.com/"
-            }
-
             if borsa_indice == "S&P 500":
-                url_sp = "https://nasdaq.com"
+                url_sp = "https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&offset=0&download=true"
                 res = requests.get(url_sp, headers=headers_nq, timeout=15)
                 if res.status_code == 200:
                     rows_all = res.json().get("data", {}).get("rows", [])
@@ -377,7 +335,8 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                         mc = _parse_market_cap(r.get("marketCap", "0"))
                         if mc > 0:
                             cand.append((sym, mc))
-                    cand.sort(key=lambda x: x[1], reverse=True)
+                    # Top 500 società USA per Market Cap decrescente (S&P 500)
+                    cand.sort(key=lambda x: x, reverse=True)
                     top_500 = cand[:500]
                     if "Large Cap" in cap_scelta:
                         selezionati = [s for s, mc in top_500 if mc >= 10_000_000_000]
@@ -388,17 +347,27 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                 motivo_err = f"HTTP {res.status_code}"
 
             elif borsa_indice == "NASDAQ 100":
-                res_nq100 = requests.get("https://nasdaq.com", headers=headers_nq, timeout=12)
-                if res_nq100.status_code == 200:
-                    rows_nq = res_nq100.json().get("data", {}).get("data", {}).get("rows", [])
-                    nq_syms = [str(r.get("symbol", "")).strip() for r in rows_nq if r.get("symbol")]
-                    if len(nq_syms) >= 90:
+                url_nq100 = "https://nasdaq.com"
+                res = requests.get(url_nq100, headers=headers_nq, timeout=15)
+                if res.status_code == 200:
+                    rows_nq = res.json().get("data", {}).get("rows", [])
+                    cand_nq = []
+                    for r in rows_nq:
+                        sym = str(r.get("symbol", "")).strip()
+                        if not sym or "^" in sym or "/" in sym or "." in sym or len(sym) > 5:
+                            continue
+                        mc = _parse_market_cap(r.get("marketCap", "0"))
+                        if mc > 0:
+                            cand_nq.append((sym, mc))
+                    cand_nq.sort(key=lambda x: x, reverse=True)
+                    nq_syms = [s for s, _ in cand_nq[:100]]
+                    if len(nq_syms) >= 50:
                         return ",".join(nq_syms), f"🌐 Live NASDAQ 100 ({len(nq_syms)} titoli)"
-                motivo_err = f"HTTP {res_nq100.status_code}"
+                motivo_err = f"HTTP {res.status_code}"
 
             else:
                 exch_param = "&exchange=NASDAQ" if "NASDAQ" in borsa_indice else ("&exchange=NYSE" if "NYSE" in borsa_indice else "")
-                url_us = f"https://nasdaq.com{exch_param}&download=true"
+                url_us = f"https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&offset=0{exch_param}&download=true"
                 res = requests.get(url_us, headers=headers_nq, timeout=15)
                 if res.status_code == 200:
                     selezionati = _filtra_cap_usa(res.json().get("data", {}).get("rows", []))
@@ -420,7 +389,7 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
             }
             tutti_it = []
             for url_w in mappa_wiki_it.get(borsa_indice, []):
-                resp_w = requests.get(url_w, headers=headers_std, timeout=10)
+                resp_w = requests.get(url_w, headers=headers_nq, timeout=10)
                 if resp_w.status_code == 200:
                     tutti_it.extend(re.findall(r"\b([A-Z0-9]{2,6}\.MI)\b", resp_w.text))
             tutti_it = list(dict.fromkeys(tutti_it))
@@ -445,7 +414,7 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
             }
             tutti_eu = []
             for url_w in mappa_wiki_eu.get(borsa_indice, []):
-                resp_w = requests.get(url_w, headers=headers_std, timeout=10)
+                resp_w = requests.get(url_w, headers=headers_nq, timeout=10)
                 if resp_w.status_code == 200:
                     tutti_eu.extend(re.findall(r"\b([A-Z0-9]{2,6}\.(?:DE|PA|AS|MC|MI|BR|HE))\b", resp_w.text))
             tutti_eu = list(dict.fromkeys(tutti_eu))
@@ -456,7 +425,7 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
         elif "Crypto" in macro_mercato:
             url_cg = "https://coingecko.com"
             params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 250, "page": 1}
-            res = requests.get(url_cg, params=params, headers=headers_std, timeout=12)
+            res = requests.get(url_cg, params=params, headers=headers_nq, timeout=12)
             if res.status_code == 200:
                 stable = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "STETH", "WSTETH", "WBTC", "BUSD", "USDS", "CBBTC"}
                 coins = [f"{c['symbol'].upper()}-USD" for c in res.json() if c.get("symbol", "").upper() not in stable]
@@ -479,7 +448,6 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
         sub_c = all_c[:25] if "TOTAL 1 & 2" in borsa_indice else all_c[25:]
         return ",".join(sub_c), f"📋 Listino Crypto ({len(sub_c)} asset){info_extra}"
     return FALLBACK_USA, f"📋 Listino USA ({len(FALLBACK_USA.split(','))} titoli){info_extra}"
-
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
