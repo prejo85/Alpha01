@@ -447,23 +447,28 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
             if len(tutti_eu) >= 15:
                 return ",".join(tutti_eu), f"🌐 Live {borsa_indice} ({len(tutti_eu)} titoli)"
 
-        # 4. CRYPTO (Endpoint Ufficiale Binance Market Data Vision — Zero blocchi 202/451)
+        # 4. CRYPTO (Endpoint Ufficiale KuCoin AllTickers — Zero API Key, Zero blocchi IP)
         elif "Crypto" in macro_mercato:
             stable = {
                 "USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "BUSD", "USDS",
                 "PYUSD", "FRAX", "USDD", "EUR", "AEUR", "EURI", "WBTC", "STETH", "WSTETH"
             }
-            url_bn = "https://data-api.binance.vision"
-            res_bn = requests.get(url_bn, headers=headers_nq, timeout=12)
-            if res_bn.status_code == 200:
-                dati_bn = res_bn.json()
+            url_kc = "https://kucoin.com"
+            res_kc = requests.get(url_kc, timeout=12)
+            if res_kc.status_code == 200:
+                tickers_kc = res_kc.json().get("data", {}).get("ticker", [])
                 coppie_usdt = []
-                for item in dati_bn:
+                for item in tickers_kc:
                     sym_pair = str(item.get("symbol", ""))
-                    if sym_pair.endswith("USDT"):
-                        base = sym_pair[:-4]
-                        vol_usd = float(item.get("quoteVolume", 0) or 0)
-                        if base and base not in stable and vol_usd > 100_000 and not base.endswith(("UP", "DOWN", "BULL", "BEAR")):
+                    if sym_pair.endswith("-USDT"):
+                        base = sym_pair[:-5]
+                        vol_usd = float(item.get("volValue", 0) or 0)
+                        if (
+                            base
+                            and base not in stable
+                            and vol_usd > 50_000
+                            and not base.endswith(("3L", "3S", "2L", "2S", "UP", "DOWN"))
+                        ):
                             coppie_usdt.append((f"{base}-USD", vol_usd))
 
                 coppie_usdt.sort(key=lambda x: x, reverse=True)
@@ -474,8 +479,9 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                         lista_c = coins[:30]
                     else:
                         lista_c = coins[30:280]
-                    return ",".join(lista_c), f"🌐 Live Binance Vision ({len(lista_c)} crypto)"
-            motivo_err = f"BN HTTP {res_bn.status_code}"
+                    return ",".join(lista_c), f"🌐 Live Crypto Market ({len(lista_c)} crypto)"
+            motivo_err = f"KC HTTP {res_kc.status_code}"
+
 
 
     except Exception as ex:
