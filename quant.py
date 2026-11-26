@@ -447,49 +447,23 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
             if len(tutti_eu) >= 15:
                 return ",".join(tutti_eu), f"🌐 Live {borsa_indice} ({len(tutti_eu)} titoli)"
 
-        # 4. CRYPTO (Endpoint Ufficiale Kraken US Public API — Zero blocchi geografici)
-        elif "Crypto" in macro_mercato:
-            stable = {
-                "USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "BUSD", "USDS",
-                "PYUSD", "FRAX", "USDD", "EUR", "AEUR", "EURI", "WBTC", "STETH", "WSTETH",
-                "USD", "GBP", "CAD", "AUD", "JPY", "CHF"
-            }
-            url_kr = "https://kraken.com"
-            res_kr = requests.get(url_kr, headers=headers_nq, timeout=12)
-            if res_kr.status_code == 200 and res_kr.text.strip():
-                pairs_kr = res_kr.json().get("result", {})
-                # Estrae tutte le coppie USD spot attive (es. "BTC/USD", "SOL/USD")
-                coins_raw = []
-                for info in pairs_kr.values():
-                    wsname = str(info.get("wsname", ""))
-                    if wsname.endswith("/USD") and info.get("status") == "online":
-                        base = wsname.split("/")
-                        # Normalizza il codice storico Kraken XBT -> BTC
-                        if base == "XBT":
-                            base = "BTC"
-                        if base and base not in stable and not base.endswith((".S", ".M", ".P")):
-                            coins_raw.append(f"{base}-USD")
-
-                # Ordina mettendo prima le Top Major per capitalizzazione e poi tutte le Altcoin
-                top_order = [
-                    "BTC-USD", "ETH-USD", "XRP-USD", "SOL-USD", "BNB-USD", "DOGE-USD", "ADA-USD",
-                    "TRX-USD", "AVAX-USD", "LINK-USD", "TON-USD", "SHIB-USD", "XLM-USD", "SUI-USD",
-                    "DOT-USD", "HBAR-USD", "BCH-USD", "UNI-USD", "LTC-USD", "NEAR-USD", "APT-USD",
-                    "ICP-USD", "PEPE-USD", "ETC-USD", "RENDER-USD", "POL-USD", "FET-USD", "VET-USD",
-                    "KAS-USD", "ATOM-USD"
+        # 4. CRYPTO TOTAL 1, TOTAL 2 & TOTAL 3 (Top 250 CoinGecko -> Yahoo -USD)
+        elif categoria.startswith("Crypto —"):
+            url_cg = "https://coingecko.com"
+            params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 250, "page": 1}
+            res = requests.get(url_cg, params=params, headers=headers_std, timeout=12)
+            if res.status_code == 200:
+                stable = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "STETH", "WSTETH", "WBTC", "BUSD", "USDS", "CBBTC"}
+                coins = [
+                    f"{c['symbol'].upper()}-USD"
+                    for c in res.json()
+                    if c.get("symbol", "").upper() not in stable
                 ]
-                uniche = list(dict.fromkeys(coins_raw))
-                top_presenti = [c for c in top_order if c in uniche]
-                alt_presenti = [c for c in uniche if c not in top_presenti]
-                coins = top_presenti + alt_presenti
-
-                if len(coins) >= 50:
-                    if "TOTAL 1 & 2" in borsa_indice:
-                        lista_c = coins[:30]
-                    else:
-                        lista_c = coins[30:280]
-                    return ",".join(lista_c), f"🌐 Live Kraken US API ({len(lista_c)} crypto)"
-            motivo_err = f"KR HTTP {res_kr.status_code}"
+                coins = list(dict.fromkeys(coins))
+                lista_c = coins[:30] if "TOTAL 1 & 2" in categoria else coins[30:220]
+                if len(lista_c) >= 15:
+                    return ",".join(lista_c), f"🌐 Live CoinGecko ({len(lista_c)} crypto)"
+            motivo_err = f"CG HTTP {res.status_code}"
 
     except Exception as ex:
         motivo_err = str(ex)[:40]
