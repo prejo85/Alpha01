@@ -569,14 +569,14 @@ def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
                     except Exception:
                         continue
 
-
-
             if len(df_t) >= 5:
                 if "Volume" not in df_t.columns or df_t["Volume"].fillna(0).sum() <= 0:
                     df_t = df_t.copy()
                     df_t["Volume"] = 1.0
 
                 p_att = float(df_t["Close"].iloc[-1])
+                ath_val = float(df_t["High"].max())
+                dd_ath_pct = round(((p_att - ath_val) / ath_val) * 100.0, 2) if ath_val > 0 else 0.0
                 d_ath = df_t["High"].idxmax()
                 df_ath = df_t.loc[d_ath:] if len(df_t.loc[d_ath:]) >= 5 else df_t.tail(min(15, len(df_t)))
                 df_rec = df_t.tail(min(giorni_recenti, len(df_t)))
@@ -601,6 +601,7 @@ def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
                 risultati.append({
                     "Ticker": tk,
                     "Prezzo": round(p_att, dec),
+                    "DD ATH %": dd_ath_pct,
                     "POC Storico": round(poc_1, dec),
                     "Dist. Storico %": d1_pct,
                     "POC ATH": round(poc_2, dec),
@@ -613,6 +614,7 @@ def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
                 risultati.append({
                     "Ticker": tk,
                     "Prezzo": None,
+                    "DD ATH %": None,
                     "POC Storico": None,
                     "Dist. Storico %": None,
                     "POC ATH": None,
@@ -621,6 +623,7 @@ def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
                     "Dist. Recente %": None,
                     "Regime 3-POC": "⚪ N/D (Dati non disp.)"
                 })
+
 
     return pd.DataFrame(risultati)
 
@@ -896,7 +899,8 @@ if scelta_modulo == "📁 Analisi Triple-POC":
         st.success(f"✅ Visualizzati tutti i **{len(df_raw_poc)} titoli** ({st.session_state.get('scan_paniere_nome', '')})!")
 
         # Protezione: se in session_state c'è ancora il formato vecchio della tabella, resetta
-        if "Dist. Recente %" not in df_raw_poc.columns:
+        # Protezione: se in session_state c'è ancora il formato vecchio della tabella, resetta
+        if "Dist. Recente %" not in df_raw_poc.columns or "DD ATH %" not in df_raw_poc.columns:
             del st.session_state["df_scan_poc_cache"]
             st.info("🔄 Aggiornamento struttura tabella: clicca di nuovo su **Scansiona Tutto il Paniere**.")
             st.stop()
@@ -924,25 +928,26 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                 key="sel_filtro_dir_poc"
             )
         with f_col3:
-            max_dist_pct = st.slider(
-                "📏 Distanza massima dal POC (%):",
-                min_value=1.0, max_value=100.0, value=15.0, step=1.0,
-                key="sl_max_dist_poc"
+            min_dd_ath = st.slider(
+                "📉 Drawdown minimo dall'ATH (%):",
+                min_value=0, max_value=95, value=0, step=5,
+                help="Es: impostando 30 vedrai solo i titoli che hanno perso almeno il 30% dai massimi storici (DD <= -30%).",
+                key="sl_dd_ath_poc"
             )
 
         # 1. Selezione colonne e colonna di riferimento
         if filtro_poc_vista == "1. Solo POC Storico (Generale)":
             col_dist = "Dist. Storico %"
-            cols_show = ["Ticker", "Prezzo", "POC Storico", "Dist. Storico %", "Regime 3-POC"]
+            cols_show = ["Ticker", "Prezzo", "DD ATH %", "POC Storico", "Dist. Storico %", "Regime 3-POC"]
         elif filtro_poc_vista == "2. Solo POC Dall'ATH":
             col_dist = "Dist. ATH %"
-            cols_show = ["Ticker", "Prezzo", "POC ATH", "Dist. ATH %", "Regime 3-POC"]
+            cols_show = ["Ticker", "Prezzo", "DD ATH %", "POC ATH", "Dist. ATH %", "Regime 3-POC"]
         elif filtro_poc_vista == "3. Solo POC Recente":
             col_dist = "Dist. Recente %"
-            cols_show = ["Ticker", "Prezzo", "POC Recente", "Dist. Recente %", "Regime 3-POC"]
+            cols_show = ["Ticker", "Prezzo", "DD ATH %", "POC Recente", "Dist. Recente %", "Regime 3-POC"]
         else:
             col_dist = "Dist. Recente %"
-            cols_show = ["Ticker", "Prezzo", "POC Storico", "Dist. Storico %", "POC ATH", "Dist. ATH %", "POC Recente", "Dist. Recente %", "Regime 3-POC"]
+            cols_show = ["Ticker", "Prezzo", "DD ATH %", "POC Storico", "Dist. Storico %", "POC ATH", "Dist. ATH %", "POC Recente", "Dist. Recente %", "Regime 3-POC"]
 
         # 2. Creazione df_filtrato e applicazione filtri
         df_filtrato = df_raw_poc.copy()
@@ -951,7 +956,12 @@ if scelta_modulo == "📁 Analisi Triple-POC":
         elif filtro_dir_poc == "🔴 Solo SHORT (Prezzo sotto il POC)":
             df_filtrato = df_filtrato[df_filtrato[col_dist].notna() & (df_filtrato[col_dist] < 0)]
 
-        df_filtrato = df_filtrato[df_filtrato[col_dist].isna() | (df_filtrato[col_dist].abs() <= max_dist_pct)]
+        if min_dd_ath > 0:
+            df_filtrato = df_filtrato[df_filtrato["DD ATH %"].notna() & (df_filtrato["DD ATH %"] <= -float(min_dd_ath))]
+
+        # 3. Ordina dal titolo più VICINO al POC al più lontano
+        df_filtrato["_dist_abs"] = df_filtrato[col_dist].abs()
+        df_filtrato = df_filtrato.sort_values(by="_dist_abs", ascending=True, na_position="last").drop(columns=["_dist_abs"]).reset_index(drop=True)
 
         # 3. Ordina dal titolo più VICINO al POC al più lontano
         df_filtrato["_dist_abs"] = df_filtrato[col_dist].abs()
