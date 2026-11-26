@@ -453,7 +453,7 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                 "USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "BUSD", "USDS",
                 "PYUSD", "FRAX", "USDD", "EUR", "AEUR", "EURI", "WBTC", "STETH", "WSTETH"
             }
-            url_bn = "https://binance.vision"
+            url_bn = "https://data-api.binance.vision"
             res_bn = requests.get(url_bn, timeout=12)
             if res_bn.status_code == 200:
                 dati_bn = res_bn.json()
