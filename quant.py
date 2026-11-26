@@ -299,8 +299,7 @@ def _parse_market_cap(val_raw):
         return 0.0
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
-def scarica_paniere_universGERARCHIA_MERCATI = {
+GERARCHIA_MERCATI = {
     "🇺🇸 USA": {
         "S&P 500": ["Large Cap (>10B)", "Tutte (500 titoli)"],
         "NASDAQ (Tutti / Tech)": ["Large Cap (>10B)", "Mid Cap (2B–10B)", "Small Cap (300M–2B)"],
