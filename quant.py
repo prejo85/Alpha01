@@ -363,7 +363,7 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                     tables = pd.read_html(resp_sp.text)
                     sp_syms = [str(s).strip().replace(".", "-") for s in tables[0]["Symbol"].tolist()]
                     if "Large Cap" in cap_scelta:
-                        res_us = requests.get("https://nasdaq.com", headers=headers_std, timeout=15)
+                        res_us = requests.get("https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&offset=0&download=true", headers=headers_std, timeout=15)
                         if res_us.status_code == 200:
                             mc_map = {str(r.get("symbol", "")).replace(".", "-"): _parse_market_cap(r.get("marketCap", "0")) for r in res_us.json().get("data", {}).get("rows", [])}
                             sp_syms = [s for s in sp_syms if mc_map.get(s, 0) >= 10_000_000_000]
