@@ -401,51 +401,104 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                         return ",".join(selezionati), f"🌐 Live {borsa_indice} ({len(selezionati)} titoli)"
                 motivo_err = f"HTTP {res.status_code}"
 
-        # 2. ITALIA
+    # 2. ITALIA — TradingView Scanner API Diretta (Borsa Italiana MIL -> .MI)
         elif "Italia" in macro_mercato:
-            mappa_wiki_it = {
-                "FTSE MIB": ["https://wikipedia.org"],
-                "FTSE Italia Mid Cap": ["https://wikipedia.org"],
-                "FTSE Italia Small Cap": ["https://wikipedia.org"],
-                "Tutte (.MI Completo)": [
-                    "https://wikipedia.org",
-                    "https://wikipedia.org",
-                    "https://wikipedia.org"
-                ]
+            payload_it = {
+                "filter": [
+                    {"left": "exchange", "operation": "equal", "right": "MIL"},
+                    {"left": "type", "operation": "in_range", "right": ["stock", "dr"]},
+                    {"left": "subtype", "operation": "in_range", "right": ["common", "foreign-issuer"]}
+                ],
+                "columns": ["name", "market_cap_basic"],
+                "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
+                "range": [0, 350]
             }
-            tutti_it = []
-            for url_w in mappa_wiki_it.get(borsa_indice, []):
-                resp_w = requests.get(url_w, headers=headers_nq, timeout=10)
-                if resp_w.status_code == 200:
-                    tutti_it.extend(re.findall(r"\b([A-Z0-9]{2,6}\.MI)\b", resp_w.text))
-            tutti_it = list(dict.fromkeys(tutti_it))
-            if len(tutti_it) >= 15:
-                return ",".join(tutti_it), f"🌐 Live {borsa_indice} ({len(tutti_it)} titoli .MI)"
+            res_it = requests.post("https://tradingview.com", json=payload_it, timeout=15)
+            res_it.raise_for_status()
+            righe_it = res_it.json().get("data", [])
+            titoli_mi = []
+            for item in righe_it:
+                d = item.get("d", [])
+                if len(d) >= 2 and d:
+                    sym = str(d).strip().replace(".", "-")
+                    mc = float(d or 0)
+                    titoli_mi.append((f"{sym}.MI", mc))
 
-        # 3. EUROPA
+            if borsa_indice == "FTSE MIB":
+                # I 40 titoli principali di Piazza Affari per capitalizzazione
+                selezionati = [s for s, _ in titoli_mi[:40]]
+            elif borsa_indice == "FTSE Italia Mid Cap":
+                # Dal 41° al 100° titolo per capitalizzazione
+                selezionati = [s for s, _ in titoli_mi[40:100]]
+            elif borsa_indice == "FTSE Italia Small Cap":
+                # Titoli oltre i 100 principali con capitalizzazione > 30M
+                selezionati = [s for s, mc in titoli_mi[100:] if mc >= 30_000_000]
+            else:
+                selezionati = [s for s, _ in titoli_mi]
+
+            selezionati = list(dict.fromkeys(selezionati))
+            return ",".join(selezionati), f"🌐 Live Borsa Italiana API ({len(selezionati)} titoli .MI)"
+
+        # 3. EUROPA — TradingView Scanner API Diretta per Borsa Nazionale
         elif "Europa" in macro_mercato:
-            mappa_wiki_eu = {
-                "EURO STOXX 50": ["https://wikipedia.org"],
-                "DAX 40 (Germania .DE)": ["https://wikipedia.org"],
-                "CAC 40 (Francia .PA)": ["https://wikipedia.org"],
-                "IBEX 35 (Spagna .MC)": ["https://wikipedia.org"],
-                "AEX 25 (Olanda .AS)": ["https://wikipedia.org"],
-                "Europa Top 300 (Combinato)": [
-                    "https://wikipedia.org",
-                    "https://wikipedia.org",
-                    "https://wikipedia.org",
-                    "https://wikipedia.org",
-                    "https://wikipedia.org"
-                ]
+            cfg_eu = {
+                "DAX 40 (Germania .DE)": ("germany", "XETR", ".DE", 40),
+                "CAC 40 (Francia .PA)": ("france", "EURONEXT", ".PA", 40),
+                "IBEX 35 (Spagna .MC)": ("spain", "BME", ".MC", 35),
+                "AEX 25 (Olanda .AS)": ("netherlands", "EURONEXT", ".AS", 25),
             }
-            tutti_eu = []
-            for url_w in mappa_wiki_eu.get(borsa_indice, []):
-                resp_w = requests.get(url_w, headers=headers_nq, timeout=10)
-                if resp_w.status_code == 200:
-                    tutti_eu.extend(re.findall(r"\b([A-Z0-9]{2,6}\.(?:DE|PA|AS|MC|MI|BR|HE))\b", resp_w.text))
-            tutti_eu = list(dict.fromkeys(tutti_eu))
-            if len(tutti_eu) >= 15:
-                return ",".join(tutti_eu), f"🌐 Live {borsa_indice} ({len(tutti_eu)} titoli)"
+            if borsa_indice in cfg_eu:
+                paese, exch_eu, suffisso, top_n = cfg_eu[borsa_indice]
+                payload_eu = {
+                    "filter": [
+                        {"left": "exchange", "operation": "equal", "right": exch_eu},
+                        {"left": "type", "operation": "equal", "right": "stock"},
+                        {"left": "subtype", "operation": "in_range", "right": ["common", "foreign-issuer"]}
+                    ],
+                    "columns": ["name", "market_cap_basic"],
+                    "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
+                    "range": [0, top_n + 15]
+                }
+                res_eu = requests.post(f"https://scanner.tradingview.com/{paese}/scan", json=payload_eu, timeout=15)
+                res_eu.raise_for_status()
+                righe_eu = res_eu.json().get("data", [])
+                selezionati = []
+                for item in righe_eu:
+                    d = item.get("d", [])
+                    if d and d:
+                        sym = str(d).strip().replace(".", "-")
+                        selezionati.append(f"{sym}{suffisso}")
+                selezionati = list(dict.fromkeys(selezionati))[:top_n]
+                return ",".join(selezionati), f"🌐 Live {borsa_indice} ({len(selezionati)} titoli)"
+            else:
+                # EURO STOXX 50 o Europa Top 300 Combinato (Top titoli delle 4 borse principali)
+                combinati = []
+                for paese, exch_eu, suffisso, top_n in [
+                    ("germany", "XETR", ".DE", 25),
+                    ("france", "EURONEXT", ".PA", 25),
+                    ("netherlands", "EURONEXT", ".AS", 15),
+                    ("spain", "BME", ".MC", 15),
+                    ("italy", "MIL", ".MI", 15),
+                ]:
+                    payload_m = {
+                        "filter": [
+                            {"left": "exchange", "operation": "equal", "right": exch_eu},
+                            {"left": "type", "operation": "equal", "right": "stock"}
+                        ],
+                        "columns": ["name", "market_cap_basic"],
+                        "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
+                        "range": [0, top_n]
+                    }
+                    r_m = requests.post(f"https://scanner.tradingview.com/{paese}/scan", json=payload_m, timeout=12)
+                    r_m.raise_for_status()
+                    for item in r_m.json().get("data", []):
+                        d = item.get("d", [])
+                        if d and d:
+                            combinati.append((f"{str(d).strip().replace('.', '-')}{suffisso}", float(d or 0)))
+                combinati.sort(key=lambda x: x, reverse=True)
+                limite_eu = 50 if "50" in borsa_indice else 100
+                selezionati = list(dict.fromkeys([s for s, _ in combinati]))[:limite_eu]
+                return ",".join(selezionati), f"🌐 Live {borsa_indice} ({len(selezionati)} titoli)"
 
         # 4. CRYPTO (Endpoint Ufficiale CoinPaprika Tickers — Top 2.000 per Market Cap, Zero API Key)
         elif "Crypto" in macro_mercato:
