@@ -260,6 +260,15 @@ FALLBACK_ITA = (
     "SPM.MI,SRG.MI,SRS.MI,SSL.MI,STAR7.MI,STLAM.MI,STMPA.MI,SWT.MI,TEN.MI,TGYM.MI,TIP.MI,TISG.MI,TPRO.MI,TRN.MI,"
     "TXT.MI,UCG.MI,UNI.MI,UNIR.MI,US.MI,VAL.MI,VLA.MI,WIIT.MI,ZIGN.MI"
 )
+ELENCO_PANIERI = [
+    "USA — Large Cap (>10B)",
+    "USA — Mid Cap (2B–10B)",
+    "USA — Small Cap (300M–2B)",
+    "Italia — Tutte (.MI Large/Mid/Small)",
+    "Europa — Top 300 (.DE/.PA/.AS/.MC/.MI)",
+    "Crypto — TOTAL 1 & 2 (Top 30)",
+    "Crypto — TOTAL 3 Altcoins (Rank 31–200)"
+]
 FALLBACK_EU = (
     "ASML.AS,SAP.DE,MC.PA,OR.PA,SIE.DE,TTE.PA,SAN.MC,ALV.DE,AIR.PA,SU.PA,DTE.DE,IBE.MC,BNP.PA,CS.PA,ENEL.MI,ISP.MI,"
     "UCG.MI,ENI.MI,RACE.MI,STLAM.MI,PRX.AS,INGA.AS,AD.AS,ABI.BR,BAS.DE,BAYN.DE,BMW.DE,MBG.DE,VOW3.DE,ADS.DE,DBK.DE,"
@@ -267,6 +276,7 @@ FALLBACK_EU = (
     "EL.PA,DG.PA,AI.PA,SAF.PA,SGO.PA,CAP.PA,DSY.PA,STMPA.PA,ORA.PA,VIV.PA,ENGI.PA,GLE.PA,ACA.PA,CA.PA,ML.PA,RI.PA,"
     "BBVA.MC,ITX.MC,TEF.MC,REP.MC,AMS.MC,FER.MC,ELE.MC,CLNX.MC,AENA.MC,NOKIA.HE,NESTE.HE,KNEBV.HE,UPM.HE"
 )
+
 FALLBACK_CRYPTO = (
     "BTC-USD,ETH-USD,USDT-USD,XRP-USD,BNB-USD,SOL-USD,DOGE-USD,ADA-USD,TRX-USD,AVAX-USD,SHIB-USD,TON-USD,LINK-USD,"
     "DOT-USD,XLM-USD,BCH-USD,SUI-USD,LTC-USD,PEPE-USD,NEAR-USD,UNI-USD,APT-USD,ICP-USD,ETC-USD,POL-USD,RENDER-USD,"
@@ -299,169 +309,8 @@ def _parse_market_cap(val_raw):
         return 0.0
 
 
-GERARCHIA_MERCATI = {
-    "🇺🇸 USA": {
-        "S&P 500": ["Large Cap (>10B)", "Tutte (500 titoli)"],
-        "NASDAQ (Tutti / Tech)": ["Large Cap (>10B)", "Mid Cap (2B–10B)", "Small Cap (300M–2B)"],
-        "NASDAQ 100": ["Large Cap (>10B)"],
-        "NYSE (New York Stock Exchange)": ["Large Cap (>10B)", "Mid Cap (2B–10B)", "Small Cap (300M–2B)"],
-    },
-    "🇮🇹 Italia (Borsa Italiana)": {
-        "FTSE MIB": ["Large Cap (>10B)"],
-        "FTSE Italia Mid Cap": ["Mid Cap (2B–10B)"],
-        "FTSE Italia Small Cap": ["Small Cap (300M–2B)"],
-        "Tutte (.MI Completo)": ["Tutte le Cap"],
-    },
-    "🇪🇺 Europa": {
-        "EURO STOXX 50": ["Large Cap (>10B)"],
-        "DAX 40 (Germania .DE)": ["Large Cap (>10B)"],
-        "CAC 40 (Francia .PA)": ["Large Cap (>10B)"],
-        "IBEX 35 (Spagna .MC)": ["Large Cap (>10B)"],
-        "AEX 25 (Olanda .AS)": ["Large Cap (>10B)"],
-        "Europa Top 300 (Combinato)": ["Large Cap (>10B)"],
-    },
-    "🪙 Crypto": {
-        "TOTAL 1 & 2 (Top 30)": ["Large Cap (>10B)"],
-        "TOTAL 3 Altcoins (Rank 31–200)": ["Mid / Small Cap"],
-    }
-}
-
-
 @st.cache_data(ttl=86400, show_spinner=False)
-def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
-    headers_std = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*"
-    }
-    motivo_err = ""
-
-    def _filtra_cap_usa(rows_list):
-        out = []
-        for r in rows_list:
-            sym = str(r.get("symbol", "")).strip()
-            if not sym or "^" in sym or "/" in sym or len(sym) > 5:
-                continue
-            mc = _parse_market_cap(r.get("marketCap", "0"))
-            sym_clean = sym.replace(".", "-")
-            if "Large Cap" in cap_scelta and mc >= 10_000_000_000:
-                out.append(sym_clean)
-            elif "Mid Cap" in cap_scelta and 2_000_000_000 <= mc < 10_000_000_000:
-                out.append(sym_clean)
-            elif "Small Cap" in cap_scelta and 300_000_000 <= mc < 2_000_000_000:
-                out.append(sym_clean)
-            elif "Tutte" in cap_scelta:
-                out.append(sym_clean)
-        return out
-
-    try:
-        # 1. USA
-        if "USA" in macro_mercato:
-            if borsa_indice == "S&P 500":
-                resp_sp = requests.get("https://wikipedia.org", headers=headers_std, timeout=12)
-                if resp_sp.status_code == 200:
-                    tables = pd.read_html(resp_sp.text)
-                    sp_syms = [str(s).strip().replace(".", "-") for s in tables[0]["Symbol"].tolist()]
-                    if "Large Cap" in cap_scelta:
-                        res_us = requests.get("https://nasdaq.com", headers=headers_std, timeout=15)
-                        if res_us.status_code == 200:
-                            mc_map = {str(r.get("symbol", "")).replace(".", "-"): _parse_market_cap(r.get("marketCap", "0")) for r in res_us.json().get("data", {}).get("rows", [])}
-                            sp_syms = [s for s in sp_syms if mc_map.get(s, 0) >= 10_000_000_000]
-                    if len(sp_syms) > 20:
-                        return ",".join(sp_syms), f"🌐 Live S&P 500 ({len(sp_syms)} titoli)"
-
-            elif borsa_indice == "NASDAQ 100":
-                resp_nq = requests.get("https://wikipedia.org", headers=headers_std, timeout=12)
-                if resp_nq.status_code == 200:
-                    for tbl in pd.read_html(resp_nq.text):
-                        col_t = next((c for c in tbl.columns if str(c).strip() in ("Ticker", "Symbol")), None)
-                        if col_t and len(tbl) >= 95:
-                            nq_syms = [str(s).strip().replace(".", "-") for s in tbl[col_t].tolist()]
-                            return ",".join(nq_syms), f"🌐 Live NASDAQ 100 ({len(nq_syms)} titoli)"
-
-            else:
-                exch_param = "&exchange=NASDAQ" if "NASDAQ" in borsa_indice else "&exchange=NYSE"
-                url_us = f"https://nasdaq.com{exch_param}&download=true"
-                res = requests.get(url_us, headers=headers_std, timeout=15)
-                if res.status_code == 200:
-                    selezionati = _filtra_cap_usa(res.json().get("data", {}).get("rows", []))
-                    if len(selezionati) > 15:
-                        return ",".join(selezionati), f"🌐 Live {borsa_indice} ({len(selezionati)} titoli)"
-                motivo_err = f"HTTP {res.status_code}"
-
-        # 2. ITALIA
-        elif "Italia" in macro_mercato:
-            mappa_wiki_it = {
-                "FTSE MIB": ["https://wikipedia.org"],
-                "FTSE Italia Mid Cap": ["https://wikipedia.org"],
-                "FTSE Italia Small Cap": ["https://wikipedia.org"],
-                "Tutte (.MI Completo)": [
-                    "https://wikipedia.org",
-                    "https://wikipedia.org",
-                    "https://wikipedia.org"
-                ]
-            }
-            tutti_it = []
-            for url_w in mappa_wiki_it.get(borsa_indice, []):
-                resp_w = requests.get(url_w, headers=headers_std, timeout=10)
-                if resp_w.status_code == 200:
-                    tutti_it.extend(re.findall(r"\b([A-Z0-9]{2,6}\.MI)\b", resp_w.text))
-            tutti_it = list(dict.fromkeys(tutti_it))
-            if len(tutti_it) >= 15:
-                return ",".join(tutti_it), f"🌐 Live {borsa_indice} ({len(tutti_it)} titoli .MI)"
-
-        # 3. EUROPA
-        elif "Europa" in macro_mercato:
-            mappa_wiki_eu = {
-                "EURO STOXX 50": ["https://wikipedia.org"],
-                "DAX 40 (Germania .DE)": ["https://wikipedia.org"],
-                "CAC 40 (Francia .PA)": ["https://wikipedia.org"],
-                "IBEX 35 (Spagna .MC)": ["https://wikipedia.org"],
-                "AEX 25 (Olanda .AS)": ["https://wikipedia.org"],
-                "Europa Top 300 (Combinato)": [
-                    "https://wikipedia.org",
-                    "https://wikipedia.org",
-                    "https://wikipedia.org",
-                    "https://wikipedia.org",
-                    "https://wikipedia.org"
-                ]
-            }
-            tutti_eu = []
-            for url_w in mappa_wiki_eu.get(borsa_indice, []):
-                resp_w = requests.get(url_w, headers=headers_std, timeout=10)
-                if resp_w.status_code == 200:
-                    tutti_eu.extend(re.findall(r"\b([A-Z0-9]{2,6}\.(?:DE|PA|AS|MC|MI|BR|HE))\b", resp_w.text))
-            tutti_eu = list(dict.fromkeys(tutti_eu))
-            if len(tutti_eu) >= 15:
-                return ",".join(tutti_eu), f"🌐 Live {borsa_indice} ({len(tutti_eu)} titoli)"
-
-        # 4. CRYPTO
-        elif "Crypto" in macro_mercato:
-            url_cg = "https://coingecko.com"
-            params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 250, "page": 1}
-            res = requests.get(url_cg, params=params, headers=headers_std, timeout=12)
-            if res.status_code == 200:
-                stable = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "STETH", "WSTETH", "WBTC", "BUSD", "USDS", "CBBTC"}
-                coins = [f"{c['symbol'].upper()}-USD" for c in res.json() if c.get("symbol", "").upper() not in stable]
-                coins = list(dict.fromkeys(coins))
-                lista_c = coins[:30] if "TOTAL 1 & 2" in borsa_indice else coins[30:220]
-                if len(lista_c) >= 15:
-                    return ",".join(lista_c), f"🌐 Live CoinGecko ({len(lista_c)} crypto)"
-            motivo_err = f"CG HTTP {res.status_code}"
-
-    except Exception as ex:
-        motivo_err = str(ex)[:40]
-
-    info_extra = f" ({motivo_err})" if motivo_err else ""
-    if "Italia" in macro_mercato:
-        return FALLBACK_ITA, f"📋 Listino Italia ({len(FALLBACK_ITA.split(','))} titoli .MI){info_extra}"
-    if "Europa" in macro_mercato:
-        return FALLBACK_EU, f"📋 Listino Europa ({len(FALLBACK_EU.split(','))} titoli){info_extra}"
-    if "Crypto" in macro_mercato:
-        all_c = FALLBACK_CRYPTO.split(",")
-        sub_c = all_c[:25] if "TOTAL 1 & 2" in borsa_indice else all_c[25:]
-        return ",".join(sub_c), f"📋 Listino Crypto ({len(sub_c)} asset){info_extra}"
-    return FALLBACK_USA, f"📋 Listino USA ({len(FALLBACK_USA.split(','))} titoli){info_extra}"
-ale(categoria):
+def scarica_paniere_universale(categoria):
     headers_std = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*"
@@ -899,22 +748,12 @@ if scelta_modulo == "📁 Analisi Triple-POC":
         mostra_atr = st.checkbox("📈 Mostra Indicatore ATR (14)", value=True, key="chk_atr")
     
     st.markdown("---")
-    m_col1, m_col2, m_col3 = st.columns(3)
-    with m_col1:
-        macro_scelto = st.selectbox("1️⃣ Macro Mercato:", list(GERARCHIA_MERCATI.keys()), key="an_macro")
-    with m_col2:
-        borse_disp = list(GERARCHIA_MERCATI[macro_scelto].keys())
-        borsa_scelta = st.selectbox("2️⃣ Borsa / Indice:", borse_disp, key=f"an_borsa_{macro_scelto}")
-    with m_col3:
-        cap_disp = GERARCHIA_MERCATI[macro_scelto][borsa_scelta]
-        cap_scelta = st.selectbox("3️⃣ Capitalizzazione:", cap_disp, key=f"an_cap_{macro_scelto}_{borsa_scelta}")
-
-    paniere_selezionato = f"{macro_scelto} — {borsa_scelta} ({cap_scelta})"
-    ticker_caricati, fonte_paniere = scarica_paniere_universale(macro_scelto, borsa_scelta, cap_scelta)
-    st.caption(f"📌 **{paniere_selezionato}** | {fonte_paniere}")
-    st.session_state.asset_type_index = 1 if "Crypto" in macro_scelto else 0
-
-    col2, col3, col4 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        paniere_selezionato = st.selectbox("Seleziona Mercato / Cap:", ELENCO_PANIERI, key="an_paniere")
+        ticker_caricati, fonte_paniere = scarica_paniere_universale(paniere_selezionato)
+        st.caption(f"{fonte_paniere}")
+        st.session_state.asset_type_index = 1 if "Crypto" in paniere_selezionato else 0
     with col2:
         asset_type = st.selectbox("Tipo Asset:", ["Azione", "Criptovaluta"], index=st.session_state.asset_type_index, key="an_type")
     with col3:
