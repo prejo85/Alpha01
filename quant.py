@@ -1205,12 +1205,13 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                                                 miglior_data_swing = data_sw
                                                 
                                     if miglior_data_swing is None and len(punti_swing_lh) > 0:
-                                        punti_swing_lh.sort(key=lambda item: item, reverse=True)
-                                        primo_sw = punti_swing_lh
-                                        miglior_data_swing = primo_sw
+                                        punti_swing_lh.sort(key=lambda item: item[1], reverse=True)
+                                        data_primo, val_primo = punti_swing_lh[0]
+                                        miglior_data_swing = pd.to_datetime(data_primo)
                                         dist_giorni = (miglior_data_swing - date_max_assoluto).days
                                         if dist_giorni > 0:
-                                            pendenza_ottimale = (primo_sw - val_max_assoluto) / dist_giorni
+                                            pendenza_ottimale = (val_primo - val_max_assoluto) / dist_giorni
+
                                             
                                     if miglior_data_swing is not None:
                                         giorni_tot = (df_s.index[-1] - date_max_assoluto).days
