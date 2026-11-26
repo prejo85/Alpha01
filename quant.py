@@ -538,6 +538,56 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
         return ",".join(sub_c), f"📋 Listino Crypto ({len(sub_c)} asset){info_extra}"
     return FALLBACK_USA, f"📋 Listino USA ({len(FALLBACK_USA.split(','))} titoli){info_extra}"
 
+NOMI_STRUMENTI_NOTI = {
+    "ES=F": "E-Mini S&P 500 Future",
+    "NQ=F": "E-Mini Nasdaq-100 Future",
+    "YM=F": "Mini Dow Jones ($5) Future",
+    "RTY=F": "E-Mini Russell 2000 Future",
+    "^GSPC": "Indice S&P 500 (Cash)",
+    "^NDX": "Indice Nasdaq-100 (Cash)",
+    "^DJI": "Indice Dow Jones Industrial",
+    "^RUT": "Indice Russell 2000",
+    "^GDAXI": "Indice DAX 40 (Germania)",
+    "^STOXX50E": "Indice EURO STOXX 50",
+    "FTSEMIB.MI": "Indice FTSE MIB (Italia)",
+    "^FCHI": "Indice CAC 40 (Francia)",
+    "^IBEX": "Indice IBEX 35 (Spagna)",
+    "^AEX": "Indice AEX 25 (Olanda)",
+    "GC=F": "Oro (Gold Future)",
+    "SI=F": "Argento (Silver Future)",
+    "HG=F": "Rame (Copper Future)",
+    "PL=F": "Platino (Platinum Future)",
+    "CL=F": "Petrolio WTI (Crude Oil)",
+    "BZ=F": "Petrolio Brent (Brent Crude)",
+    "NG=F": "Gas Naturale (Natural Gas)",
+    "RB=F": "Benzina RBOB (Gasoline)",
+    "ZB=F": "US Treasury Bond 30Y",
+    "ZN=F": "US Treasury Note 10Y",
+    "ZF=F": "US Treasury Note 5Y",
+    "ZT=F": "US Treasury Note 2Y",
+    "EURUSD=X": "Cambio EUR / USD",
+    "JPY=X": "Cambio USD / JPY",
+    "GBPUSD=X": "Cambio GBP / USD",
+    "DX-Y.NYB": "US Dollar Index (DXY)",
+}
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _ottieni_descrizione_ticker(simbolo):
+    if simbolo in NOMI_STRUMENTI_NOTI:
+        return NOMI_STRUMENTI_NOTI[simbolo]
+    try:
+        info = yf.Ticker(simbolo).fast_info
+        nome = getattr(info, "shortName", None) or getattr(info, "longName", None)
+        if not nome:
+            info_dict = yf.Ticker(simbolo).info
+            nome = info_dict.get("shortName") or info_dict.get("longName")
+        if nome:
+            return str(nome).strip()
+    except Exception:
+        pass
+    return simbolo.replace("-USD", " (Crypto)").replace(".MI", " (Milano)")
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
     risultati_dd = []
@@ -572,6 +622,7 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
             if len(df_t) < 60:
                 continue
 
+            desc_nome = _ottieni_descrizione_ticker(tk)
             close_s = df_t["Close"].astype(float)
             low_s = df_t["Low"].astype(float)
             high_s = df_t["High"].astype(float)
@@ -580,7 +631,6 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
             dd_series = ((close_s - roll_peak) / roll_peak) * 100.0
             dd_intraday = ((low_s - roll_peak) / roll_peak) * 100.0
 
-            # Calcolo cicli di drawdown chiusi (durata in giorni di borsa fino al recupero del massimo)
             durate_cicli = []
             mese_durate = {m: [] for m in range(1, 13)}
             in_dd = False
@@ -610,7 +660,6 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
                             mese_durate[mese_min_ciclo].append(dur_gg)
                         in_dd = False
 
-            # Statistiche mensili del singolo titolo
             df_tmp_m = pd.DataFrame({"Mese": mesi_idx, "DD": dd_vals})
             for m_num in range(1, 13):
                 sub_m = df_tmp_m[df_tmp_m["Mese"] == m_num]["DD"]
@@ -660,6 +709,7 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
 
             risultati_dd.append({
                 "Ticker": tk,
+                "Descrizione": desc_nome,
                 "Prezzo": round(float(close_s.iloc[-1]), 4 if "-USD" in tk or "=X" in tk else 2),
                 "DD Attuale %": round(dd_attuale, 2),
                 "Severità Storica (Pct)": round(severita_pct, 1),
@@ -698,7 +748,6 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
         df_mesi_out = pd.DataFrame()
 
     return df_titoli_out, df_mesi_out
-
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
@@ -1564,7 +1613,7 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
         df_dd_res = st.session_state["df_dd_study_cache"].copy()
         df_dd_months = st.session_state.get("df_dd_months_cache", pd.DataFrame())
 
-        if "Giorni Stimati al Recupero" not in df_dd_res.columns:
+        if "Giorni Stimati al Recupero" not in df_dd_res.columns or "Descrizione" not in df_dd_res.columns:
             del st.session_state["df_dd_study_cache"]
             st.info("🔄 Aggiornamento struttura calcolo: clicca di nuovo su **Calcola Statistiche Drawdown su Tutto il Paniere**.")
             st.stop()
@@ -1667,7 +1716,7 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
             df_dd_view = df_dd_view.sort_values(by="Ulcer Index", ascending=True)
         df_dd_view = df_dd_view.reset_index(drop=True)
 
-        st.caption("💡 Clicca su una riga della tabella per visualizzare la **Curva Underwater Storica**, i **Giorni Mancanti al Recupero** e inviare il titolo a **TradingView Pro**.")
+        st.caption("💡 Clicca su una riga della tabella per visualizzare la **Curva Underwater Storica**, i **Giorni Mancanti al Recupero** e inviare lo strumento a **TradingView Pro**.")
         ev_dd_tab = st.dataframe(
             df_dd_view,
             use_container_width=True,
@@ -1679,23 +1728,25 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
 
         sel_rows_dd = ev_dd_tab.get("selection", {}).get("rows", []) if isinstance(ev_dd_tab, dict) else getattr(ev_dd_tab.selection, "rows", [])
         idx_dd_sel = sel_rows_dd[0] if (len(sel_rows_dd) > 0 and sel_rows_dd[0] < len(df_dd_view)) else (0 if len(df_dd_view) > 0 else None)
+
         # ======================================================================
         # TAB 03: STUDIO STATISTICO DRAWDOWN & FUTURES (PARTE 4/4)
         # ======================================================================
         if idx_dd_sel is not None:
             riga_sel = df_dd_view.iloc[idx_dd_sel]
             tk_dd_focus = str(riga_sel["Ticker"])
+            desc_dd_focus = str(riga_sel["Descrizione"])
 
             st.markdown("---")
             hc_dd1, hc_dd2 = st.columns([2.5, 1.2])
             with hc_dd1:
-                st.markdown(f"#### 🌊 Analisi Storica Underwater & Distribuzione: `{tk_dd_focus}`")
+                st.markdown(f"#### 🌊 Analisi Storica Underwater & Distribuzione: **{desc_dd_focus}**")
             with hc_dd2:
                 def _apri_dd_in_tv(sim_dd=tk_dd_focus):
                     st.session_state["tv_test_tk"] = sim_dd
                     st.session_state["menu_navigazione_moduli"] = "🧪 TradingView Pro"
                     st.session_state["jump_to_modulo"] = "🧪 TradingView Pro"
-                st.button(f"🧪 Analizza {tk_dd_focus} su TradingView Pro", use_container_width=True, on_click=_apri_dd_in_tv)
+                st.button(f"🧪 Analizza {desc_dd_focus} su TradingView Pro", use_container_width=True, on_click=_apri_dd_in_tv)
 
             df_focus = yf.download(tickers=tk_dd_focus, period=dd_per_val, interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
             if df_focus is not None and len(df_focus) > 30:
@@ -1715,7 +1766,7 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
                     vertical_spacing=0.10,
                     horizontal_spacing=0.06,
                     subplot_titles=(
-                        f"Prezzo & Massimi Storici Rolling ({tk_dd_focus})",
+                        f"Prezzo & Massimi Storici Rolling — {desc_dd_focus}",
                         "Curva Underwater (Drawdown % dai Massimi)",
                         "Distribuzione Frequenza Drawdown"
                     )
@@ -1743,7 +1794,7 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
                 prezzo_oggi_foc = float(c_foc.iloc[-1])
                 rialzo_necessario = ((picco_da_rec - prezzo_oggi_foc) / prezzo_oggi_foc) * 100.0 if prezzo_oggi_foc > 0 else 0.0
 
-                st.markdown(f"##### ⏱️ Stima Orizzonte di Recupero del Drawdown Attuale ({tk_dd_focus})")
+                st.markdown(f"##### ⏱️ Stima Orizzonte di Recupero del Drawdown Attuale — **{desc_dd_focus}**")
                 rc1, rc2, rc3, rc4 = st.columns(4)
                 with rc1:
                     st.metric("Giorni Già Trascorsi Sotto il Picco", f"{gg_attuali_uw} gg", f"DD attuale: {dd_oggi_val:.2f}%")
