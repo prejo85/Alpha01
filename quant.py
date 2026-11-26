@@ -301,6 +301,13 @@ GERARCHIA_MERCATI = {
     "🪙 Crypto": {
         "TOTAL 1 & 2 (Top 30)": ["Large Cap (>10B)"],
         "TOTAL 3 Altcoins (Rank 31–200)": ["Mid / Small Cap"],
+    },
+    "📊 Futures & Indici Globali": {
+        "Indici Azionari USA (ES, NQ, YM, RTY)": ["Contratti Futures"],
+        "Indici Azionari Europa (DAX, STOXX, FTSE MIB)": ["Contratti Futures / Indici"],
+        "Metalli & Energia (Oro, Argento, Petrolio, Gas)": ["Contratti Futures"],
+        "Obbligazioni & Valute (T-Note, Bund, EUR/USD)": ["Contratti Futures / FX"],
+        "Paniere Completo Futures (Tutti)": ["Contratti Futures"],
     }
 }
 def _parse_market_cap(val):
@@ -502,6 +509,20 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                         lista_c = coins[30:280]
                     return ",".join(lista_c), f"🌐 Live CoinPaprika API ({len(lista_c)} crypto)"
             motivo_err = f"CP HTTP {res_cp.status_code}"
+        # 5. FUTURES & INDICI GLOBALI (Contratti Continui Yahoo Finance)
+        elif "Futures" in macro_mercato:
+            mappa_fut = {
+                "Indici Azionari USA (ES, NQ, YM, RTY)": "ES=F,NQ=F,YM=F,RTY=F,^GSPC,^NDX,^DJI,^RUT",
+                "Indici Azionari Europa (DAX, STOXX, FTSE MIB)": "^GDAXI,^STOXX50E,FTSEMIB.MI,^FCHI,^IBEX,^AEX",
+                "Metalli & Energia (Oro, Argento, Petrolio, Gas)": "GC=F,SI=F,HG=F,PL=F,CL=F,BZ=F,NG=F,RB=F",
+                "Obbligazioni & Valute (T-Note, Bund, EUR/USD)": "ZB=F,ZN=F,ZF=F,ZT=F,EURUSD=X,JPY=X,GBPUSD=X,DX-Y.NYB",
+            }
+            if borsa_indice in mappa_fut:
+                lista_f = mappa_fut[borsa_indice]
+            else:
+                lista_f = ",".join(dict.fromkeys(",".join(mappa_fut.values()).split(",")))
+            return lista_f, f"🌐 Listino Futures & Indici ({len(lista_f.split(','))} strumenti)"
+
 
     except Exception as ex:
         motivo_err = str(ex)[:40]
@@ -516,6 +537,106 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
         sub_c = all_c[:25] if "TOTAL 1 & 2" in borsa_indice else all_c[25:]
         return ",".join(sub_c), f"📋 Listino Crypto ({len(sub_c)} asset){info_extra}"
     return FALLBACK_USA, f"📋 Listino USA ({len(FALLBACK_USA.split(','))} titoli){info_extra}"
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
+    risultati_dd = []
+
+    def _estrai_df_dd(df_raw, simbolo):
+        if df_raw is None or df_raw.empty:
+            return pd.DataFrame()
+        if isinstance(df_raw.columns, pd.MultiIndex):
+            if simbolo not in df_raw.columns.get_level_values(0):
+                return pd.DataFrame()
+            return df_raw[simbolo].dropna(subset=["Close", "High", "Low"])
+        return df_raw.dropna(subset=["Close", "High", "Low"])
+
+    for i in range(0, len(lista_tickers), 25):
+        blocco = lista_tickers[i:i + 25]
+        try:
+            df_batch = yf.download(
+                tickers=blocco,
+                period=periodo_storico,
+                interval="1d",
+                group_by="ticker",
+                auto_adjust=False,
+                threads=False,
+                progress=False
+            )
+        except Exception:
+            df_batch = pd.DataFrame()
+
+        for tk in blocco:
+            df_t = _estrai_df_dd(df_batch, tk)
+            if len(df_t) < 60:
+                continue
+
+            close_s = df_t["Close"].astype(float)
+            low_s = df_t["Low"].astype(float)
+            high_s = df_t["High"].astype(float)
+
+            # Serie storica Underwater (Drawdown dal massimo precedente)
+            roll_peak = high_s.cummax()
+            dd_series = ((close_s - roll_peak) / roll_peak) * 100.0
+            dd_intraday = ((low_s - roll_peak) / roll_peak) * 100.0
+
+            dd_attuale = float(dd_series.iloc[-1])
+            max_dd = float(dd_intraday.min())
+            dd_mediano = float(dd_series.median())
+            dd_p75 = float(np.percentile(dd_series, 25))  # 25° pct dei valori negativi = 75° pct di severità DD
+            dd_p90 = float(np.percentile(dd_series, 10))  # 90° pct di severità DD
+
+            # Percentile di severità del DD attuale rispetto alla storia del titolo (0-100%)
+            severita_pct = float((dd_series >= dd_attuale).mean() * 100.0)
+
+            # Ulcer Index (radice della media dei quadrati dei drawdown: misura profondità + durata)
+            ulcer_idx = float(np.sqrt(np.mean(np.square(dd_series))))
+
+            # Giorni consecutivi attuali sotto il massimo (Time Underwater)
+            sotto_picco = (close_s < roll_peak).values
+            giorni_uw = 0
+            for flag in reversed(sotto_picco):
+                if flag:
+                    giorni_uw += 1
+                else:
+                    break
+
+            # Rendimento medio forward a 60 e 90 giorni quando il titolo si trovava in zona DD >= 75° pct
+            fwd_60 = ((close_s.shift(-60) - close_s) / close_s) * 100.0
+            fwd_90 = ((close_s.shift(-90) - close_s) / close_s) * 100.0
+            mask_zona_dd = dd_series <= dd_p75
+            ret_60_post = float(fwd_60[mask_zona_dd].dropna().mean()) if mask_zona_dd.sum() > 5 else np.nan
+            ret_90_post = float(fwd_90[mask_zona_dd].dropna().mean()) if mask_zona_dd.sum() > 5 else np.nan
+
+            # Leva massima prudenziale suggerita (basata sul 90° percentile di DD per evitare margin call)
+            leva_sicura = round(min(10.0, 50.0 / max(5.0, abs(dd_p90))), 1)
+
+            if severita_pct >= 85.0:
+                stato_dd = "🔥 ECCESSO ESTREMO (>85° pct)"
+            elif severita_pct >= 65.0:
+                stato_dd = "🟠 ZONA ACCUMULO (65–85° pct)"
+            elif abs(dd_attuale) <= 5.0:
+                stato_dd = "🟢 VICINO AI MASSIMI"
+            else:
+                stato_dd = "🔵 RITRACCIAMENTO NORMALE"
+
+            risultati_dd.append({
+                "Ticker": tk,
+                "Prezzo": round(float(close_s.iloc[-1]), 4 if "-USD" in tk or "=X" in tk else 2),
+                "DD Attuale %": round(dd_attuale, 2),
+                "Severità Storica (Pct)": round(severita_pct, 1),
+                "DD Mediano %": round(dd_mediano, 2),
+                "DD 90° Pct %": round(dd_p90, 2),
+                "Max DD Storico %": round(max_dd, 2),
+                "Ulcer Index": round(ulcer_idx, 2),
+                "Giorni Underwater": int(giorni_uw),
+                "Ret. Medio 60g Post-DD %": round(ret_60_post, 2) if not np.isnan(ret_60_post) else None,
+                "Ret. Medio 90g Post-DD %": round(ret_90_post, 2) if not np.isnan(ret_90_post) else None,
+                "Leva Max Sicura": f"{leva_sicura}x",
+                "Regime Drawdown": stato_dd
+            })
+
+    return pd.DataFrame(risultati_dd)
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -736,6 +857,7 @@ with st.sidebar:
     opzioni_menu = [
         "🧪 TradingView Pro",
         "📁 Analisi Triple-POC",
+        "📉 Studio Drawdown & Futures",
         "📈 Analisi GARCH Volatilità",
     ]
 
@@ -777,8 +899,6 @@ descrizioni_moduli = {
         "trendline dinamica sui massimi decrescenti, riconoscimento pattern **Falling Wedge + candele Marubozu** e pannelli sincronizzati "
         "di **RSI (14)**, **ATR (14)** e **Z-Score (50) con SMA 9**."
     ),
-
-
         "🧪 TradingView Pro": (
         "**Scopo Operativo & Architettura:** Workstation grafica quantitativa multi-timeframe (15m–1M) "
         "con barra contesto in tempo reale (**Esponente di Hurst**, **ATR 14**, **RVOL** e **Calendario Earnings**). "
@@ -786,13 +906,19 @@ descrizioni_moduli = {
         "oscillatori sincronizzati (RSI, MACD, Z-Score ±2), Triple Volume Profile, strumenti di disegno "
         "con **Position Sizing automatico** nel Tool R:R e salvataggio alert su **GitHub (`alerts_geometrici_v2.json`)**."
      ),
-
         "📈 Analisi GARCH Volatilità": (
         "**Scopo Operativo & Architettura:** Modellizza i fenomeni finanziari dei cluster di volatilità (*volatility clustering*) "
         "e i picchi asimmetrici generati dal panico di mercato. Sfrutta la libreria econometrica `arch` per configurare i parametri "
         "condizionali e confrontare le varianti Standard GARCH (simmetrico), GJR-GARCH (effetto leva a soglia) ed EGARCH (esponenziale), "
         "sovrapponendo la varianza annualizzata ai rendimenti logaritmici."
     ),
+        "📉 Studio Drawdown & Futures": (
+        "**Scopo Operativo & Architettura:** Laboratorio statistico per l'analisi della profondità, durata (*Time Underwater*) "
+        "e velocità di recupero dei **Drawdown** su panieri azionari, crypto e **contratti Futures**. Calcola il **Percentile di Severità** "
+        "del calo attuale rispetto alla storia dell'asset, l'**Ulcer Index**, i **rendimenti medi attesi a 60/90 giorni** dopo un ritracciamento "
+        "e la **Leva Massima Prudenziale** per calibrare stop loss e marginazione senza farsi espellere dal rumore di mercato."
+    ),
+
 }
 
 if scelta_modulo in descrizioni_moduli:
@@ -1321,6 +1447,171 @@ if scelta_modulo == "📁 Analisi Triple-POC":
 
                     else: 
                         st.warning(f"Dati storici insufficienti per {ticker}.")
+
+# ==============================================================================
+# TAB 03: STUDIO STATISTICO DRAWDOWN & FUTURES (PARTE 1/4)
+# ==============================================================================
+if scelta_modulo == "📉 Studio Drawdown & Futures":
+
+    st.subheader("📉 Studio Statistico dei Drawdown, Recovery & Calibrazione Futures")
+
+    with st.expander("📖 Guida Operativa: Come Usare la Statistica dei Drawdown per Trading e Futures", expanded=False):
+        st.markdown("""
+        ### 🧠 Perché studiare i Drawdown prima di entrare a mercato?
+        Un calo del **-15%** su un'azione difensiva o sull'S&P 500 è un evento raro e profittevole da comprare; lo stesso **-15%** su una crypto o su un titolo tech volatile è semplice rumore quotidiano.
+        * **📊 Severità Storica (Percentile):** Ti dice se il drawdown di oggi è peggiore del 75%–90% delle giornate storiche di quel preciso asset (*zona di eccesso statistico*).
+        * **🌊 Ulcer Index:** Misura lo stress psicologico e finanziario combinando **quanto scende** il prezzo e **per quanti giorni resta sotto i massimi**. Più è basso, più il trend del paniere è regolare.
+        * **🚀 Ret. Medio 60g / 90g Post-DD:** Mostra quanto ha reso in media acquistare quel titolo ogni volta che entrava nel quartile peggiore dei suoi drawdown.
+        * **⚖️ Leva Max Sicura (Futures / CFD):** Calcola la leva massima sostenibile affinché un ritracciamento al **90° percentile storico** non eroda più del 50% del margine allocato.
+        """)
+
+    dd_c1, dd_c2, dd_c3, dd_c4 = st.columns([1.2, 1.3, 1.1, 1.0])
+    with dd_c1:
+        dd_macro = st.selectbox("1️⃣ Macro Mercato:", list(GERARCHIA_MERCATI.keys()), index=4, key="dd_macro_sel")
+    with dd_c2:
+        dd_borse = list(GERARCHIA_MERCATI[dd_macro].keys())
+        dd_borsa = st.selectbox("2️⃣ Borsa / Indice / Futures:", dd_borse, key=f"dd_borsa_{dd_macro}")
+    with dd_c3:
+        dd_caps = GERARCHIA_MERCATI[dd_macro][dd_borsa]
+        dd_cap = st.selectbox("3️⃣ Categoria / Cap:", dd_caps, key=f"dd_cap_{dd_macro}_{dd_borsa}")
+    with dd_c4:
+        dd_per_map = {"2 Anni": "2y", "5 Anni": "5y", "10 Anni": "10y", "Storico Massimo": "max"}
+        dd_per_lbl = st.selectbox("4️⃣ Storico Analisi:", list(dd_per_map.keys()), index=1, key="dd_per_sel")
+        dd_per_val = dd_per_map[dd_per_lbl]
+
+    dd_tickers_str, dd_fonte_lbl = scarica_paniere_universale(dd_macro, dd_borsa, dd_cap)
+    st.caption(f"📌 **{dd_macro} — {dd_borsa} ({dd_cap})** | {dd_fonte_lbl}")
+
+    dd_custom_tk = st.text_input(
+        "Ticker personalizzati (lascia vuoto per analizzare tutto il paniere selezionato):",
+        value="",
+        placeholder="Es: ES=F, NQ=F, GC=F, CL=F, AAPL, ENEL.MI, BTC-USD",
+        key=f"dd_custom_{dd_macro}_{dd_borsa}"
+    )
+
+    if st.button("📊 Calcola Statistiche Drawdown su Tutto il Paniere", type="primary", use_container_width=True, key="btn_run_dd_study"):
+        lista_dd_target = [t.strip().upper() for t in (dd_custom_tk if dd_custom_tk.strip() else dd_tickers_str).split(",") if t.strip()]
+        with st.spinner(f"Elaborazione serie storiche e distribuzione drawdown su {len(lista_dd_target)} strumenti ({dd_per_lbl})..."):
+            st.session_state["df_dd_study_cache"] = calcola_stats_drawdown_paniere(lista_dd_target, periodo_storico=dd_per_val)
+            st.session_state["dd_study_title"] = f"{dd_borsa} ({dd_per_lbl})"
+    # ==========================================================================
+    # TAB 03: STUDIO STATISTICO DRAWDOWN & FUTURES (PARTE 2/4)
+    # ==========================================================================
+    if "df_dd_study_cache" in st.session_state and not st.session_state["df_dd_study_cache"].empty:
+        df_dd_res = st.session_state["df_dd_study_cache"].copy()
+
+        st.markdown(f"##### 🌐 Sintesi Statistica Paniere: **{st.session_state.get('dd_study_title', '')}** ({len(df_dd_res)} strumenti)")
+        kpi_d1, kpi_d2, kpi_d3, kpi_d4 = st.columns(4)
+        with kpi_d1:
+            st.metric("DD Attuale Medio Paniere", f"{df_dd_res['DD Attuale %'].mean():.2f}%", f"Mediana: {df_dd_res['DD Attuale %'].median():.2f}%")
+        with kpi_d2:
+            st.metric("Max DD Storico Medio", f"{df_dd_res['Max DD Storico %'].mean():.2f}%", f"Peggiore: {df_dd_res['Max DD Storico %'].min():.2f}%")
+        with kpi_d3:
+            st.metric("Ulcer Index Medio", f"{df_dd_res['Ulcer Index'].mean():.2f}", "Più basso = trend più pulito")
+        with kpi_d4:
+            ret90_avg = df_dd_res["Ret. Medio 90g Post-DD %"].dropna().mean()
+            st.metric("Rimbalzo Medio 90g Post-DD", f"{ret90_avg:+.2f}%" if not np.isnan(ret90_avg) else "N/D", "Dopo ingresso in zona 75° pct")
+
+        fd1, fd2 = st.columns(2)
+        with fd1:
+            min_sev_dd = st.slider(
+                "🎯 Filtra per Severità Storica minima del Drawdown attuale (Percentile):",
+                min_value=0, max_value=95, value=0, step=5,
+                help="Imposta es. 75 per isolare solo i titoli che oggi si trovano nel 25% peggiore dei loro drawdown storici.",
+                key="sl_dd_sev_filter"
+            )
+        with fd2:
+            sort_dd_col = st.selectbox(
+                "🔃 Ordina tabella per:",
+                [
+                    "Severità Storica (Pct) (Più estremi prima)",
+                    "DD Attuale % (Più profondi prima)",
+                    "Ret. Medio 90g Post-DD % (Miglior rimbalzo storico)",
+                    "Ulcer Index (Più stabili prima)"
+                ],
+                key="sel_sort_dd_study"
+            )
+        # ======================================================================
+        # TAB 03: STUDIO STATISTICO DRAWDOWN & FUTURES (PARTE 3/4)
+        # ======================================================================
+        df_dd_view = df_dd_res[df_dd_res["Severità Storica (Pct)"] >= min_sev_dd].copy()
+        if "Severità" in sort_dd_col:
+            df_dd_view = df_dd_view.sort_values(by="Severità Storica (Pct)", ascending=False)
+        elif "DD Attuale" in sort_dd_col:
+            df_dd_view = df_dd_view.sort_values(by="DD Attuale %", ascending=True)
+        elif "Ret. Medio" in sort_dd_col:
+            df_dd_view = df_dd_view.sort_values(by="Ret. Medio 90g Post-DD %", ascending=False, na_position="last")
+        else:
+            df_dd_view = df_dd_view.sort_values(by="Ulcer Index", ascending=True)
+        df_dd_view = df_dd_view.reset_index(drop=True)
+
+        st.caption("💡 Clicca su una riga della tabella per visualizzare la **Curva Underwater Storica**, l'**Istogramma dei Drawdown** e inviare il titolo a **TradingView Pro**.")
+        ev_dd_tab = st.dataframe(
+            df_dd_view,
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="tabella_dd_interattiva"
+        )
+
+        sel_rows_dd = ev_dd_tab.get("selection", {}).get("rows", []) if isinstance(ev_dd_tab, dict) else getattr(ev_dd_tab.selection, "rows", [])
+        idx_dd_sel = sel_rows_dd[0] if (len(sel_rows_dd) > 0 and sel_rows_dd[0] < len(df_dd_view)) else (0 if len(df_dd_view) > 0 else None)
+        # ======================================================================
+        # TAB 03: STUDIO STATISTICO DRAWDOWN & FUTURES (PARTE 4/4)
+        # ======================================================================
+        if idx_dd_sel is not None:
+            riga_sel = df_dd_view.iloc[idx_dd_sel]
+            tk_dd_focus = str(riga_sel["Ticker"])
+
+            st.markdown("---")
+            hc_dd1, hc_dd2 = st.columns([2.5, 1.2])
+            with hc_dd1:
+                st.markdown(f"#### 🌊 Analisi Storica Underwater & Distribuzione: `{tk_dd_focus}`")
+            with hc_dd2:
+                def _apri_dd_in_tv(sim_dd=tk_dd_focus):
+                    st.session_state["tv_test_tk"] = sim_dd
+                    st.session_state["menu_navigazione_moduli"] = "🧪 TradingView Pro"
+                    st.session_state["jump_to_modulo"] = "🧪 TradingView Pro"
+                st.button(f"🧪 Analizza {tk_dd_focus} su TradingView Pro", use_container_width=True, on_click=_apri_dd_in_tv)
+
+            df_focus = yf.download(tickers=tk_dd_focus, period=dd_per_val, interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
+            if df_focus is not None and len(df_focus) > 30:
+                df_focus.columns = [str(c).strip() for c in df_focus.columns]
+                c_foc = df_focus["Close"].astype(float)
+                h_foc = df_focus["High"].astype(float)
+                peak_foc = h_foc.cummax()
+                uw_foc = ((c_foc - peak_foc) / peak_foc) * 100.0
+                p75_val = float(np.percentile(uw_foc, 25))
+                p90_val = float(np.percentile(uw_foc, 10))
+
+                fig_uw = make_subplots(
+                    rows=2, cols=2,
+                    column_widths=[0.72, 0.28],
+                    row_heights=[0.52, 0.48],
+                    specs=[[{"colspan": 2}, None], [{}, {}]],
+                    vertical_spacing=0.10,
+                    horizontal_spacing=0.06,
+                    subplot_titles=(
+                        f"Prezzo & Massimi Storici Rolling ({tk_dd_focus})",
+                        "Curva Underwater (Drawdown % dai Massimi)",
+                        "Distribuzione Frequenza Drawdown"
+                    )
+                )
+
+                fig_uw.add_trace(grp.Scatter(x=df_focus.index, y=c_foc, mode="lines", name="Prezzo Close", line=dict(color="#38bdf8", width=2)), row=1, col=1)
+                fig_uw.add_trace(grp.Scatter(x=df_focus.index, y=peak_foc, mode="lines", name="Massimo Precedente", line=dict(color="rgba(250, 204, 21, 0.55)", width=1.2, dash="dot")), row=1, col=1)
+
+                fig_uw.add_trace(grp.Scatter(x=df_focus.index, y=uw_foc, mode="lines", name="Drawdown %", line=dict(color="#ef4444", width=1.6), fill="tozeroy", fillcolor="rgba(239, 68, 68, 0.22)"), row=2, col=1)
+                fig_uw.add_hline(y=p75_val, line_dash="dash", line_color="#f59e0b", annotation_text=f"75° pct ({p75_val:.1f}%)", row=2, col=1)
+                fig_uw.add_hline(y=p90_val, line_dash="dash", line_color="#a855f7", annotation_text=f"90° pct ({p90_val:.1f}%)", row=2, col=1)
+
+                fig_uw.add_trace(grp.Histogram(y=uw_foc, nbinsy=35, marker_color="rgba(56, 189, 248, 0.55)", name="Frequenza", showlegend=False), row=2, col=2)
+                fig_uw.add_hline(y=float(uw_foc.iloc[-1]), line_color="#22c55e", line_width=2.2, annotation_text=f"Oggi: {uw_foc.iloc[-1]:.1f}%", row=2, col=2)
+
+                fig_uw.update_layout(template="plotly_dark", height=620, margin=dict(l=20, r=20, t=35, b=20), showlegend=False)
+                st.plotly_chart(fig_uw, use_container_width=True, key=f"uw_chart_{tk_dd_focus}")
+
 
 # ==============================================================================
 # TAB 19: TRADINGVIEW PRO QUANTITATIVO (PARTE 1/5 - CONTROLLI & STRUMENTI)
