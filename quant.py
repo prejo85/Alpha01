@@ -1263,7 +1263,15 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                                         )
                             
                             txt_label_grafico = f"📊 ENTRY {dir_n} {round(p_att, dec_f)}<br>🔸 SL: {round(sl, dec_f)}<br>🔹 TP: {round(tp, dec_f)}"
-                            fig.add_annotation(x=d_lf, y=p_att, text=txt_label_grafico, showarrow=True, arrowhead=2, arrowcolor="#22c55e" if is_long else "#ef4444", ax=-65, ay=-45 if is_long else 45, align="left", font=dict(color="white", size=9), bgcolor="#22c55e" if is_long else "#ef4444", bordercolor="white", borderwidth=1, borderpad=5, row=r_idx, col=1)
+                            fig.add_annotation(
+                                x=d_lf, y=p_att, text=txt_label_grafico,
+                                showarrow=True, arrowhead=2, arrowcolor="#22c55e" if is_long else "#ef4444",
+                                ax=20, ay=0, xanchor="left", align="left",
+                                font=dict(color="white", size=9),
+                                bgcolor="#22c55e" if is_long else "#ef4444",
+                                bordercolor="white", borderwidth=1, borderpad=5,
+                                row=r_idx, col=1
+                            )
 
                             y_pos_leg = {1: 0.99, 2: 0.77, 3: 0.55}[r_idx]
                             txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Setup: {ic} {dir_n}<br>🟣 ENTRY: {round(p_att, dec_f)}<br>🔴 POC: {round(p_poc, dec_f)}<br>🟠 VAH: {round(p_vh, dec_f)}<br>🔵 VAL: {round(p_vl, dec_f)}"
