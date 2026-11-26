@@ -1303,14 +1303,6 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=-2.0, y1=-2.0, line=dict(color="#ef4444", width=1.2, dash="dash"), row=curr_r, col=1)
                         fig.update_xaxes(matches="x3", row=curr_r, col=1)
 
-                        for r_x in:
-                            df_tmp_x = [df1, df2, df3][r_x - 1]
-                            if len(df_tmp_x) > 1:
-                                step_x = (df_tmp_x.index[-1] - df_tmp_x.index[-2])
-                                pad_bars = max(12, int(len(df_tmp_x) * 0.14))
-                                fig.update_xaxes(range=[df_tmp_x.index.min(), df_tmp_x.index[-1] + (step_x * pad_bars)], row=r_x, col=1)
-
-
                         fig.update_layout(
                             template="plotly_dark",
                             dragmode="pan",
