@@ -354,46 +354,42 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
                 out.append(sym_clean)
         return out
 
-    try:
-        # 1. USA (Fonti GitHub Raw sempre attive e senza blocchi 403)
+    try:        # 1. USA (Endpoint Ufficiale NASDAQ Screener API)
         if "USA" in macro_mercato:
+            headers_nq = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "Origin": "https://www.nasdaq.com",
+                "Referer": "https://www.nasdaq.com/"
+            }
+
             if borsa_indice == "S&P 500":
-                url_sp = "https://githubusercontent.com"
-                df_sp = pd.read_csv(url_sp)
-                sp_syms = [str(s).strip().replace(".", "-") for s in df_sp["Symbol"].dropna().tolist()]
-
-                if "Large Cap" in cap_scelta:
-                    res_mc = requests.get("https://githubusercontent.com", timeout=15)
-                    if res_mc.status_code == 200:
-                        mc_map = {str(r.get("symbol", "")).replace(".", "-"): _parse_market_cap(r.get("marketCap", "0")) for r in res_mc.json()}
-                        sp_syms = [s for s in sp_syms if mc_map.get(s, 0) >= 10_000_000_000]
-
-                if len(sp_syms) > 20:
-                    return ",".join(sp_syms), f"🌐 Live S&P 500 ({len(sp_syms)} titoli)"
+                resp_sp = requests.get("https://wikipedia.org", headers=headers_nq, timeout=12)
+                if resp_sp.status_code == 200:
+                    tables = pd.read_html(resp_sp.text)
+                    sp_syms = [str(s).strip().replace(".", "-") for s in tables[0]["Symbol"].tolist()]
+                    if "Large Cap" in cap_scelta:
+                        res_us = requests.get("https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&offset=0&download=true", headers=headers_nq, timeout=15)
+                        if res_us.status_code == 200:
+                            mc_map = {str(r.get("symbol", "")).strip().replace(".", "-"): _parse_market_cap(r.get("marketCap", "0")) for r in res_us.json().get("data", {}).get("rows", [])}
+                            sp_syms = [s for s in sp_syms if mc_map.get(s, 0) >= 10_000_000_000]
+                    if len(sp_syms) > 20:
+                        return ",".join(sp_syms), f"🌐 Live S&P 500 ({len(sp_syms)} titoli)"
 
             elif borsa_indice == "NASDAQ 100":
-                headers_nq = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Referer": "https://nasdaq.com"
-                }
-                res_nq = requests.get("https://nasdaq.com", headers=headers_nq, timeout=12)
-                if res_nq.status_code == 200:
-                    rows_nq = res_nq.json().get("data", {}).get("data", {}).get("rows", [])
+                res_nq100 = requests.get("https://nasdaq.com", headers=headers_nq, timeout=12)
+                if res_nq100.status_code == 200:
+                    rows_nq = res_nq100.json().get("data", {}).get("data", {}).get("rows", [])
                     nq_syms = [str(r.get("symbol", "")).strip().replace(".", "-") for r in rows_nq if r.get("symbol")]
                     if len(nq_syms) >= 90:
                         return ",".join(nq_syms), f"🌐 Live NASDAQ 100 ({len(nq_syms)} titoli)"
 
             else:
-                if "NASDAQ" in borsa_indice:
-                    url_us = "https://githubusercontent.com"
-                elif "NYSE" in borsa_indice:
-                    url_us = "https://githubusercontent.com"
-                else:
-                    url_us = "https://githubusercontent.com"
-
-                res = requests.get(url_us, timeout=15)
+                exch_param = "&exchange=NASDAQ" if "NASDAQ" in borsa_indice else ("&exchange=NYSE" if "NYSE" in borsa_indice else "")
+                url_us = f"https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&offset=0{exch_param}&download=true"
+                res = requests.get(url_us, headers=headers_nq, timeout=15)
                 if res.status_code == 200:
-                    selezionati = _filtra_cap_usa(res.json())
+                    selezionati = _filtra_cap_usa(res.json().get("data", {}).get("rows", []))
                     if len(selezionati) > 15:
                         return ",".join(selezionati), f"🌐 Live {borsa_indice} ({len(selezionati)} titoli)"
                 motivo_err = f"HTTP {res.status_code}"
