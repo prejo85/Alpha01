@@ -1276,6 +1276,7 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                             y_pos_leg = {1: 0.99, 2: 0.77, 3: 0.55}[r_idx]
                             txt_leg = f"<b>📊 PROFILO {nm.upper()}</b><br>Setup: {ic} {dir_n}<br>🟣 ENTRY: {round(p_att, dec_f)}<br>🔴 POC: {round(p_poc, dec_f)}<br>🟠 VAH: {round(p_vh, dec_f)}<br>🔵 VAL: {round(p_vl, dec_f)}"
                             fig.add_annotation(xref="paper", yref="paper", x=0.01, y=y_pos_leg, text=txt_leg, showarrow=False, align="left", bgcolor="rgba(20,24,33,0.95)", bordercolor="rgba(242,142,43,0.4)", borderwidth=1.5, borderpad=8, font=dict(color="white", size=10))
+                        
                         # ==========================================
                         # --- TAB 1: TRE POC SCANNER (PARTE 6/6) ---
                         # ==========================================
@@ -1301,6 +1302,14 @@ if scelta_modulo == "📁 Analisi Triple-POC":
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=0.0, y1=0.0, line=dict(color="rgba(255, 255, 255, 0.25)", width=1), row=curr_r, col=1)
                         fig.add_shape(type="line", x0=df_recent_ind.index.min(), x1=df_recent_ind.index[-1], y0=-2.0, y1=-2.0, line=dict(color="#ef4444", width=1.2, dash="dash"), row=curr_r, col=1)
                         fig.update_xaxes(matches="x3", row=curr_r, col=1)
+
+                        for r_x in:
+                            df_tmp_x = [df1, df2, df3][r_x - 1]
+                            if len(df_tmp_x) > 1:
+                                step_x = (df_tmp_x.index[-1] - df_tmp_x.index[-2])
+                                pad_bars = max(12, int(len(df_tmp_x) * 0.14))
+                                fig.update_xaxes(range=[df_tmp_x.index.min(), df_tmp_x.index[-1] + (step_x * pad_bars)], row=r_x, col=1)
+
 
                         fig.update_layout(
                             template="plotly_dark",
