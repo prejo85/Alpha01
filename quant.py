@@ -277,6 +277,32 @@ FALLBACK_CRYPTO = (
     "MKR-USD,SNX-USD,COMP-USD,DYDX-USD,ENS-USD,1INCH-USD,ZEC-USD,DASH-USD,KAVA-USD,CELO-USD,BAT-USD,ZIL-USD,ENJ-USD"
 )
 
+GERARCHIA_MERCATI = {
+    "🇺🇸 USA": {
+        "S&P 500": ["Large Cap (>10B)", "Tutte (500 titoli)"],
+        "NASDAQ (Tutti / Tech)": ["Large Cap (>10B)", "Mid Cap (2B–10B)", "Small Cap (300M–2B)"],
+        "NASDAQ 100": ["Large Cap (>10B)"],
+        "NYSE (New York Stock Exchange)": ["Large Cap (>10B)", "Mid Cap (2B–10B)", "Small Cap (300M–2B)"],
+    },
+    "🇮🇹 Italia (Borsa Italiana)": {
+        "FTSE MIB": ["Large Cap (>10B)"],
+        "FTSE Italia Mid Cap": ["Mid Cap (2B–10B)"],
+        "FTSE Italia Small Cap": ["Small Cap (300M–2B)"],
+        "Tutte (.MI Completo)": ["Tutte le Cap"],
+    },
+    "🇪🇺 Europa": {
+        "EURO STOXX 50": ["Large Cap (>10B)"],
+        "DAX 40 (Germania .DE)": ["Large Cap (>10B)"],
+        "CAC 40 (Francia .PA)": ["Large Cap (>10B)"],
+        "IBEX 35 (Spagna .MC)": ["Large Cap (>10B)"],
+        "AEX 25 (Olanda .AS)": ["Large Cap (>10B)"],
+        "Europa Top 300 (Combinato)": ["Large Cap (>10B)"],
+    },
+    "🪙 Crypto": {
+        "TOTAL 1 & 2 (Top 30)": ["Large Cap (>10B)"],
+        "TOTAL 3 Altcoins (Rank 31–200)": ["Mid / Small Cap"],
+    }
+}
 def _parse_market_cap(val):
     try:
         if val is None or val == "" or str(val).upper() in ("NA", "N/A", "NONE"):
