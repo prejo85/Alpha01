@@ -1635,7 +1635,7 @@ if scelta_modulo == "🏠 Home Page":
             """, unsafe_allow_html=True)
 
             def _jump_mod(dest_mod=md["titolo"]):
-                st.session_state["modulo_attivo"] = dest_mod
+                st.session_state["menu_navigazione_moduli"] = dest_mod
                 st.session_state["jump_to_modulo"] = dest_mod
 
             st.button(f"Apri {md['titolo'].split(' ', 1)[1]}", use_container_width=True, key=md["key_btn"], on_click=_jump_mod)
