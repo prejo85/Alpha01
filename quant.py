@@ -1085,15 +1085,11 @@ def carica_dati_home_live(lista_tickers_alert):
 def carica_calendario_macro_3stelle():
     giorni_it = {0: "Lunedì", 1: "Martedì", 2: "Mercoledì", 3: "Giovedì", 4: "Venerdì", 5: "Sabato", 6: "Domenica"}
     bandiere = {
-        "US": "🇺🇸 USA (USD)", "USD": "🇺🇸 USA (USD)",
-        "EU": "🇪🇺 Eurozona (EUR)", "EUR": "🇪🇺 Eurozona (EUR)", "DE": "🇩🇪 Germania (EUR)", "IT": "🇮🇹 Italia (EUR)", "FR": "🇫🇷 Francia (EUR)",
-        "GB": "🇬🇧 UK (GBP)", "UK": "🇬🇧 UK (GBP)", "GBP": "🇬🇧 UK (GBP)",
-        "JP": "🇯🇵 Giappone (JPY)", "JPY": "🇯🇵 Giappone (JPY)",
-        "CH": "🇨🇭 Svizzera (CHF)", "CHF": "🇨🇭 Svizzera (CHF)",
-        "CA": "🇨🇦 Canada (CAD)", "CAD": "🇨🇦 Canada (CAD)",
-        "AU": "🇦🇺 Australia (AUD)", "AUD": "🇦🇺 Australia (AUD)",
-        "NZ": "🇳🇿 Nuova Zelanda (NZD)", "NZD": "🇳🇿 Nuova Zelanda (NZD)",
-        "CN": "🇨🇳 Cina (CNY)", "CNY": "🇨🇳 Cina (CNY)",
+        "US": "🇺🇸 USA (USD)", "EU": "🇪🇺 Eurozona (EUR)", "DE": "🇩🇪 Germania (EUR)",
+        "IT": "🇮🇹 Italia (EUR)", "FR": "🇫🇷 Francia (EUR)", "ES": "🇪🇸 Spagna (EUR)",
+        "GB": "🇬🇧 UK (GBP)", "JP": "🇯🇵 Giappone (JPY)", "CH": "🇨🇭 Svizzera (CHF)",
+        "CA": "🇨🇦 Canada (CAD)", "AU": "🇦🇺 Australia (AUD)", "NZ": "🇳🇿 Nuova Zelanda (NZD)",
+        "CN": "🇨🇳 Cina (CNY)"
     }
 
     ora_it = pd.Timestamp.now(tz="Europe/Rome")
@@ -1108,34 +1104,44 @@ def carica_calendario_macro_3stelle():
     else:
         start_dt = oggi_it
 
-    end_dt = start_dt + pd.Timedelta(days=6)
+    end_dt = start_dt + pd.Timedelta(days=6, hours=23, minutes=59)
+
+    url_tv_cal = "https://tradingview.com"
+    params_tv = {
+        "from": start_dt.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "to": end_dt.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "countries": "US,EU,DE,IT,FR,GB,JP,CH,CA,AU,CN"
+    }
+    headers_tv = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Origin": "https://tradingview.com",
+        "Referer": "https://tradingview.com/"
+    }
 
     righe_3s = []
     try:
-        cal_yf = yf.Calendars(start=start_dt.strftime("%Y-%m-%d"), end=end_dt.strftime("%Y-%m-%d"))
-        df_eco = cal_yf.get_economic_events_calendar(limit=100)
-
-        if df_eco is not None and not df_eco.empty:
-            for idx_ev, row in df_eco.iterrows():
-                # Filtra le notizie ad Alto Impatto (3 Stelle)
-                imp_raw = str(row.get("Importance", row.get("Impact", ""))).strip().upper()
-                if imp_raw not in {"HIGH", "3", "H", "HIGH IMPACT"}:
+        res = requests.get(url_tv_cal, params=params_tv, headers=headers_tv, timeout=12)
+        if res.status_code == 200:
+            eventi = res.json().get("result", [])
+            for ev in eventi:
+                # Su TradingView importance == 1 corrisponde esattamente alle 3 Stelle (Alto Impatto)
+                if int(ev.get("importance", 0) or 0) < 1:
                     continue
 
-                dt_ev = pd.to_datetime(row.get("Event Time", idx_ev), utc=True, errors="coerce")
-                if pd.isna(dt_ev):
+                dt_raw = pd.to_datetime(ev.get("date"), utc=True, errors="coerce")
+                if pd.isna(dt_raw):
                     continue
-                dt_it = dt_ev.tz_convert("Europe/Rome")
+                dt_it = dt_raw.tz_convert("Europe/Rome")
 
-                paese = str(row.get("Country", row.get("Region", ""))).strip().upper()
-                area_lbl = bandiere.get(paese, f"🌐 {paese}" if paese else "🌍 Globale")
-                titolo_ev = str(row.get("Event", row.get("Title", idx_ev))).strip()
-                previsto = str(row.get("Estimate", row.get("Forecast", "—"))).strip()
-                precedente = str(row.get("Prior", row.get("Previous", "—"))).strip()
-                if previsto in ("", "nan", "None", "NaN"):
-                    previsto = "—"
-                if precedente in ("", "nan", "None", "NaN"):
-                    precedente = "—"
+                paese = str(ev.get("country", "")).strip().upper()
+                area_lbl = bandiere.get(paese, f"🌐 {paese}")
+                titolo_ev = str(ev.get("title", "")).strip()
+
+                prev_val = ev.get("forecast")
+                stor_val = ev.get("previous")
+                unit_val = str(ev.get("unit", "") or "")
+                previsto = f"{prev_val}{unit_val}" if prev_val is not None and str(prev_val) != "" else "—"
+                precedente = f"{stor_val}{unit_val}" if stor_val is not None and str(stor_val) != "" else "—"
 
                 is_oggi = dt_it.normalize() == oggi_it
                 nome_g = giorni_it.get(dt_it.weekday(), "")
