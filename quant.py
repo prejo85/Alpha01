@@ -1265,16 +1265,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-    
-    st.markdown("---")
-    if st.button("🔒 Disconnetti (Logout)", use_container_width=True):
-        st.session_state["autenticato"] = False
-        st.rerun()
-
-
-    st.markdown("---")
-    st.caption(" 📐 Quant Dashboard Pro v4.0")
-
 # Configurazione del Titolo dinamico della pagina principale
 logo_b64 = _get_base64_bg("logo_fmjp.png")
 
