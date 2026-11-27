@@ -1185,6 +1185,54 @@ def carica_calendario_macro_3stelle():
         except Exception:
             continue
 
+    # TENTATIVO 2: Yahoo Finance Economic Events Calendar (se NASDAQ non restituisce eventi futuri nel weekend)
+    if not righe_3s:
+        try:
+            cal_yf = yf.Calendars(
+                start=giorni_target[0].strftime("%Y-%m-%d"),
+                end=(giorni_target[-1] + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+            )
+            df_eco_yf = cal_yf.get_economic_events_calendar(limit=150)
+            if df_eco_yf is not None and not df_eco_yf.empty:
+                for idx_r, row_y in df_eco_yf.iterrows():
+                    titolo_ev = str(row_y.get("Event") or row_y.get("Title") or idx_r or "").strip()
+                    if not titolo_ev:
+                        continue
+                    tit_low = titolo_ev.lower()
+                    if not any(k in tit_low for k in kw_3stelle):
+                        continue
+
+                    dt_ev = pd.to_datetime(row_y.get("Event Time") or row_y.get("Date") or idx_r, utc=True, errors="coerce")
+                    if pd.isna(dt_ev):
+                        continue
+                    dt_it = dt_ev.tz_convert("Europe/Rome")
+                    if dt_it.weekday() >= 5:
+                        continue
+
+                    paese = str(row_y.get("Country") or row_y.get("Region") or "US").strip().upper()
+                    area_lbl = bandiere.get(paese, f"🌐 {paese}")
+                    prev_v = str(row_y.get("Estimate") or row_y.get("Consensus") or "").strip()
+                    prec_v = str(row_y.get("Prior") or row_y.get("Previous") or "").strip()
+                    previsto = prev_v if prev_v not in ("", "nan", "None", "NaN") else "—"
+                    precedente = prec_v if prec_v not in ("", "nan", "None", "NaN") else "—"
+
+                    is_oggi = dt_it.normalize() == oggi_it
+                    nome_g = giorni_it.get(dt_it.weekday(), "")
+                    tab_giorno = f"🔥 OGGI ({dt_it.strftime('%d/%m')})" if is_oggi else f"📅 {nome_g} {dt_it.strftime('%d/%m')}"
+
+                    righe_3s.append({
+                        "Tab_Giorno": tab_giorno,
+                        "Data_Ord": dt_it.strftime("%Y-%m-%d"),
+                        "Ora (IT)": dt_it.strftime("%H:%M"),
+                        "Impatto": "⭐⭐⭐ ALTO",
+                        "Area / Valuta": area_lbl,
+                        "Evento Macroeconomico (3 Stelle)": titolo_ev,
+                        "Previsto": previsto,
+                        "Precedente": precedente,
+                    })
+        except Exception:
+            pass
+
     if not righe_3s:
         return pd.DataFrame()
 
