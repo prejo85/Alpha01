@@ -1137,8 +1137,7 @@ def carica_calendario_macro_3stelle():
             res = requests.get(url_nq_eco, headers=headers_nq_cal, timeout=10)
             if res.status_code != 200:
                 continue
-            data_obj = res.json().get("data") or {}
-            rows_eco = (data_obj.get("calendar") or {}).get("rows") or data_obj.get("rows") or []
+            rows_eco = res.json().get("data", {}).get("rows", [])
             if not rows_eco:
                 continue
 
