@@ -1083,23 +1083,24 @@ def carica_dati_home_live(lista_tickers_alert):
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def carica_calendario_macro_3stelle():
+    import xml.etree.ElementTree as ET
+
     giorni_it = {0: "Lunedì", 1: "Martedì", 2: "Mercoledì", 3: "Giovedì", 4: "Venerdì", 5: "Sabato", 6: "Domenica"}
     bandiere = {
-        "US": "🇺🇸 USA (USD)", "EU": "🇪🇺 Eurozona (EUR)", "DE": "🇩🇪 Germania (EUR)",
-        "IT": "🇮🇹 Italia (EUR)", "FR": "🇫🇷 Francia (EUR)", "ES": "🇪🇸 Spagna (EUR)",
-        "GB": "🇬🇧 UK (GBP)", "JP": "🇯🇵 Giappone (JPY)", "CH": "🇨🇭 Svizzera (CHF)",
-        "CA": "🇨🇦 Canada (CAD)", "AU": "🇦🇺 Australia (AUD)", "NZ": "🇳🇿 Nuova Zelanda (NZD)",
-        "CN": "🇨🇳 Cina (CNY)"
+        "USD": "🇺🇸 USA (USD)", "US": "🇺🇸 USA (USD)",
+        "EUR": "🇪🇺 Eurozona (EUR)", "EU": "🇪🇺 Eurozona (EUR)", "DE": "🇩🇪 Germania (EUR)", "IT": "🇮🇹 Italia (EUR)", "FR": "🇫🇷 Francia (EUR)",
+        "GBP": "🇬🇧 UK (GBP)", "UK": "🇬🇧 UK (GBP)",
+        "JPY": "🇯🇵 Giappone (JPY)", "JP": "🇯🇵 Giappone (JPY)",
+        "CH": "🇨🇭 Svizzera (CHF)", "CHF": "🇨🇭 Svizzera (CHF)",
+        "CA": "🇨🇦 Canada (CAD)", "CAD": "🇨🇦 Canada (CAD)",
+        "AU": "🇦🇺 Australia (AUD)", "AUD": "🇦🇺 Australia (AUD)",
+        "NZ": "🇳🇿 Nuova Zelanda (NZD)", "NZD": "🇳🇿 Nuova Zelanda (NZD)",
+        "CN": "🇨🇳 Cina (CNY)", "CNY": "🇨🇳 Cina (CNY)",
     }
 
     ora_it = pd.Timestamp.now(tz="Europe/Rome")
     oggi_it = ora_it.normalize()
 
-    # Scarica sempre una finestra ampia di 14 giorni (da ieri fino a +12 giorni) per includere tutta la settimana prossima
-    query_start = oggi_it - pd.Timedelta(days=1)
-    query_end = oggi_it + pd.Timedelta(days=12)
-
-    # Soglia di visualizzazione: se è venerdì sera (>20:00) o weekend, mostra dal lunedì prossimo; altrimenti da oggi
     if (ora_it.weekday() == 4 and ora_it.hour >= 20) or ora_it.weekday() >= 5:
         giorni_a_lun = (7 - ora_it.weekday()) % 7
         if giorni_a_lun == 0:
@@ -1108,47 +1109,32 @@ def carica_calendario_macro_3stelle():
     else:
         soglia_vis = oggi_it
 
-    url_tv_cal = "https://tradingview.com"
-    params_tv = {
-        "from": query_start.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-        "to": query_end.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-        "countries": "US,EU,DE,IT,FR,GB,JP,CH,CA,AU,CN"
-    }
-    headers_tv = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Origin": "https://tradingview.com",
-        "Referer": "https://tradingview.com/"
-    }
-
     righe_3s = []
+
+    # Fonte 1: Myfxbook Economic Calendar XML (Nessun blocco IP AWS/Cloud)
     try:
-        res = requests.get(url_tv_cal, params=params_tv, headers=headers_tv, timeout=15)
-        if res.status_code == 200:
-            eventi = res.json().get("result", [])
-            for ev in eventi:
-                # Importance == 1 corrisponde alle 3 Stelle (Alto Impatto)
-                if int(ev.get("importance", 0) or 0) < 1:
+        url_mfx = "https://myfxbook.com"
+        res_mfx = requests.get(url_mfx, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        if res_mfx.status_code == 200 and "<" in res_mfx.text:
+            root = ET.fromstring(res_mfx.content)
+            for item in root.findall(".//event"):
+                imp_txt = (item.findtext("impact") or "").strip().lower()
+                if imp_txt not in {"high", "3"}:
                     continue
 
-                dt_raw = pd.to_datetime(ev.get("date"), utc=True, errors="coerce")
+                date_txt = (item.findtext("date") or "").strip()
+                dt_raw = pd.to_datetime(date_txt, utc=True, errors="coerce")
                 if pd.isna(dt_raw):
                     continue
                 dt_it = dt_raw.tz_convert("Europe/Rome")
 
-                # Filtra solo gli eventi dalla soglia di visualizzazione (Oggi o Lunedì prossimo) in poi
                 if dt_it.normalize() < soglia_vis:
                     continue
 
-                paese = str(ev.get("country", "")).strip().upper()
-                area_lbl = bandiere.get(paese, f"🌐 {paese}")
-                titolo_ev = str(ev.get("title", "")).strip()
-
-                prev_val = ev.get("forecast")
-                stor_val = ev.get("previous")
-                unit_val = str(ev.get("unit", "") or "")
-                previsto = f"{prev_val}{unit_val}" if prev_val is not None and str(prev_val) != "" else "—"
-                precedente = f"{stor_val}{unit_val}" if stor_val is not None and str(stor_val) != "" else "—"
+                paese = (item.findtext("country") or "").strip().upper()
+                titolo_ev = (item.findtext("title") or "").strip()
+                previsto = (item.findtext("forecast") or "").strip() or "—"
+                precedente = (item.findtext("previous") or "").strip() or "—"
 
                 is_oggi = dt_it.normalize() == oggi_it
                 nome_g = giorni_it.get(dt_it.weekday(), "")
@@ -1159,7 +1145,7 @@ def carica_calendario_macro_3stelle():
                     "Data_Ord": dt_it.strftime("%Y-%m-%d"),
                     "Ora (IT)": dt_it.strftime("%H:%M"),
                     "Impatto": "⭐⭐⭐ ALTO",
-                    "Area / Valuta": area_lbl,
+                    "Area / Valuta": bandiere.get(paese, f"🌐 {paese}"),
                     "Evento Macroeconomico (3 Stelle)": titolo_ev,
                     "Previsto": previsto,
                     "Precedente": precedente,
@@ -1173,7 +1159,6 @@ def carica_calendario_macro_3stelle():
 
     df_cal = pd.DataFrame(righe_3s).drop_duplicates(subset=["Data_Ord", "Ora (IT)", "Evento Macroeconomico (3 Stelle)"])
     return df_cal.sort_values(by="_ts", ascending=True).drop(columns=["_ts"]).reset_index(drop=True)
-
 
 # ==============================================================================
 # STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
