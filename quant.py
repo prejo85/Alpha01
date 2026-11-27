@@ -1565,7 +1565,6 @@ if scelta_modulo == "📁 Analisi Triple-POC":
 
                     else: 
                         st.warning(f"Dati storici insufficienti per {ticker}.")
-
 # ==============================================================================
 # TAB 03: STUDIO STATISTICO DRAWDOWN & FUTURES (PARTE 1/4)
 # ==============================================================================
@@ -1579,7 +1578,7 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
         Un calo del **-15%** su un'azione difensiva o sull'S&P 500 è un evento raro e profittevole da comprare; lo stesso **-15%** su una crypto o su un titolo tech volatile è semplice rumore quotidiano.
         * **📊 Severità Storica (Percentile):** Ti dice se il drawdown di oggi è peggiore del 75%–90% delle giornate storiche di quel preciso asset (*zona di eccesso statistico*).
         * **📅 Stagionalità Mensile:** Individua in quali mesi dell'anno il paniere soffre i ritracciamenti peggiori e quanti giorni di borsa impiega mediamente a recuperarli.
-        * **⏱️ Giorni Stimati al Recupero:** Confronta i giorni già trascorsi sotto il picco con la durata media storica dei cali di quel singolo titolo.
+        * **⏱️ Giorni Stimati al Recupero:** Confronta i giorni già trascorsi sotto il picco con la durata media storica dei cali simili di quel singolo titolo.
         * **⚖️ Leva Max Sicura (Futures / CFD):** Calcola la leva massima sostenibile affinché un ritracciamento al **90° percentile storico** non eroda più del 50% del margine allocato.
         """)
 
@@ -1621,7 +1620,11 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
         df_dd_res = st.session_state["df_dd_study_cache"].copy()
         df_dd_months = st.session_state.get("df_dd_months_cache", pd.DataFrame())
 
-        if "Giorni Stimati al Recupero" not in df_dd_res.columns or "Descrizione" not in df_dd_res.columns:
+        if (
+            "Giorni Stimati al Recupero" not in df_dd_res.columns
+            or "Descrizione" not in df_dd_res.columns
+            or "Recupero Max Storico (gg)" not in df_dd_res.columns
+        ):
             del st.session_state["df_dd_study_cache"]
             st.info("🔄 Aggiornamento struttura calcolo: clicca di nuovo su **Calcola Statistiche Drawdown su Tutto il Paniere**.")
             st.stop()
@@ -1629,14 +1632,14 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
         st.markdown(f"##### 🌐 Sintesi Statistica Paniere: **{st.session_state.get('dd_study_title', '')}** ({len(df_dd_res)} strumenti)")
         kpi_d1, kpi_d2, kpi_d3, kpi_d4 = st.columns(4)
         with kpi_d1:
-            st.metric("DD Attuale Medio Paniere", f"{df_dd_res['DD Attuale %'].mean():.2f}%", f"Mediana: {df_dd_res['DD Attuale %'].median():.2f}%")
+            st.metric("DD Attuale Medio Paniere", f"{df_dd_res['DD Attuale %'].mean():.2f}%", f"Mediana: {df_dd_res['DD Attuale %'].median():.2f}%", delta_color="off")
         with kpi_d2:
-            st.metric("Max DD Storico Medio", f"{df_dd_res['Max DD Storico %'].mean():.2f}%", f"Peggiore: {df_dd_res['Max DD Storico %'].min():.2f}%")
+            st.metric("Max DD Storico Medio", f"{df_dd_res['Max DD Storico %'].mean():.2f}%", f"Peggiore: {df_dd_res['Max DD Storico %'].min():.2f}%", delta_color="off")
         with kpi_d3:
-            st.metric("Recupero Storico Medio", f"{int(df_dd_res['Recupero Storico Medio (gg)'].mean())} gg", "Giorni di borsa fino all'ATH")
+            st.metric("Recupero Storico Medio", f"{int(df_dd_res['Recupero Storico Medio (gg)'].mean())} gg", "Giorni di borsa fino all'ATH", delta_color="off")
         with kpi_d4:
             ret90_avg = df_dd_res["Ret. Medio 90g Post-DD %"].dropna().mean()
-            st.metric("Rimbalzo Medio 90g Post-DD", f"{ret90_avg:+.2f}%" if not np.isnan(ret90_avg) else "N/D", "Dopo ingresso in zona 75° pct")
+            st.metric("Rimbalzo Medio 90g Post-DD", f"{ret90_avg:+.2f}%" if not np.isnan(ret90_avg) else "N/D", "+Dopo ingresso in zona 75° pct" if not np.isnan(ret90_avg) else "N/D", delta_color="normal")
 
         if not df_dd_months.empty:
             st.markdown("---")
@@ -1736,7 +1739,6 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
 
         sel_rows_dd = ev_dd_tab.get("selection", {}).get("rows", []) if isinstance(ev_dd_tab, dict) else getattr(ev_dd_tab.selection, "rows", [])
         idx_dd_sel = sel_rows_dd[0] if (len(sel_rows_dd) > 0 and sel_rows_dd[0] < len(df_dd_view)) else (0 if len(df_dd_view) > 0 else None)
-
         # ======================================================================
         # TAB 03: STUDIO STATISTICO DRAWDOWN & FUTURES (PARTE 4/4)
         # ======================================================================
@@ -1792,7 +1794,7 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
                 fig_uw.update_layout(template="plotly_dark", height=620, margin=dict(l=20, r=20, t=35, b=20), showlegend=False)
                 st.plotly_chart(fig_uw, use_container_width=True, key=f"uw_chart_{tk_dd_focus}")
 
-                # RIEPILOGO CHIARO TEMPI DI RECUPERO DEL TITOLO SELEZIONATO
+                # RIEPILOGO CHIARO TEMPI DI RECUPERO DEL TITOLO SELEZIONATO CON DATE ESATTE
                 gg_attuali_uw = int(riga_sel["Giorni Underwater"])
                 gg_storici_rec = int(riga_sel["Recupero Storico Medio (gg)"])
                 gg_max_rec = int(riga_sel.get("Recupero Max Storico (gg)", gg_storici_rec))
@@ -1802,39 +1804,61 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
                 prezzo_oggi_foc = float(c_foc.iloc[-1])
                 rialzo_necessario = ((picco_da_rec - prezzo_oggi_foc) / prezzo_oggi_foc) * 100.0 if prezzo_oggi_foc > 0 else 0.0
 
+                data_inizio_studio = pd.to_datetime(df_focus.index.min()).strftime("%d/%m/%Y")
+                data_fine_studio = pd.to_datetime(df_focus.index.max()).strftime("%d/%m/%Y")
+                data_picco_ath = pd.to_datetime(c_foc.idxmax()).strftime("%d/%m/%Y")
+                tot_sedute_studio = len(df_focus)
+
                 st.markdown(f"##### ⏱️ Analisi Tempi di Recupero — **{desc_dd_focus}**")
+                st.caption(
+                    f"📅 **Finestra Storica Analizzata:** dal **{data_inizio_studio}** al **{data_fine_studio}** ({tot_sedute_studio} sedute di borsa)  |  "
+                    f"🏔️ **Data Massimo di Riferimento (ATH):** **{data_picco_ath}** (Quota **{picco_da_rec:.2f}**)"
+                )
+
+                with st.expander("📖 Legenda & Spiegazione dei 4 Indicatori di Recupero", expanded=False):
+                    st.markdown(f"""
+                    * **Contesto Temporale:** Tutti i calcoli statistici (medie, record e percentili) sono estratti sulla finestra dal **{data_inizio_studio}** al **{data_fine_studio}**. Il calo attuale è misurato a partire dal massimo toccato il **{data_picco_ath}**.
+                    * **1. Giorni dal Picco ({data_picco_ath}):** Conta quante sedute di borsa sono trascorse dal massimo del **{data_picco_ath}** fino a oggi. Il valore sotto indica la **perdita attuale** dal picco (in **rosso** se negativo, in **verde** se sui massimi).
+                    * **2. Tempo Medio Cali Simili:** Analizza tutti i drawdown passati dello stesso strumento (dal **{data_inizio_studio}** ad oggi) con profondità simile a quello attuale e calcola quanti giorni di borsa sono serviti **in media** (e nel **caso peggiore storico**) per tornare in pari.
+                    * **3. Stato / Giorni Mancanti al Recupero:** Confronta i giorni già trascorsi dal **{data_picco_ath}** con la media storica:
+                      * 🟢 **Verde (Entro la media / Sui massimi):** Indica quanti giorni di borsa mancano teoricamente al recupero completo (`~21 giorni di borsa = 1 mese solare`).
+                      * 🔴 **Rosso (Fase Estesa / Record Storico):** Il recupero sta impiegando più della media storica o ha superato il record massimo della finestra analizzata.
+                    * **4. Target Pari (ATH {data_picco_ath}):** È la quotazione esatta da raggiungere per azzerare il drawdown, accompagnata dal **rendimento % necessario** dai prezzi attuali.
+                    """)
+
                 rc1, rc2, rc3, rc4 = st.columns(4)
                 with rc1:
                     st.metric(
-                        "1. Giorni Già in Calo",
+                        f"1. Giorni dal Picco ({data_picco_ath})",
                         f"{gg_attuali_uw} gg borsa",
-                        f"Calo attuale: {dd_oggi_val:.2f}%",
-                        delta_color="off"
+                        f"{dd_oggi_val:+.2f}% dal massimo" if abs(dd_oggi_val) > 0.01 else "+0.00% (Sui Massimi oggi)",
+                        delta_color="normal"
                     )
                 with rc2:
                     st.metric(
                         "2. Tempo Medio Cali Simili",
                         f"{gg_storici_rec} gg borsa",
-                        f"Peggiore storico: {gg_max_rec} gg",
+                        f"Record max storico: {gg_max_rec} gg",
                         delta_color="off"
                     )
                 with rc3:
                     if abs(dd_oggi_val) <= 0.5:
-                        st.metric("3. Stato Recupero", "Sui Massimi ✅", "Nessun calo da recuperare", delta_color="off")
+                        st.metric("3. Stato Recupero", "Sui Massimi ✅", "+Pronto per nuovi record", delta_color="normal")
                     elif gg_mancanti_rec > 0:
-                        st.metric("3. Giorni Mancanti (Stima)", f"~ {gg_mancanti_rec} gg", f"Circa {round(gg_mancanti_rec / 21, 1)} mesi di borsa", delta_color="off")
+                        st.metric("3. Giorni Mancanti (Stima)", f"~ {gg_mancanti_rec} gg", f"+Circa {round(gg_mancanti_rec / 21, 1)} mesi al target", delta_color="normal")
                     elif gg_attuali_uw <= gg_max_rec:
                         residui_max = gg_max_rec - gg_attuali_uw
-                        st.metric("3. Fase Estesa (Oltre Media)", f"Max +{residui_max} gg", f"Sopra media, entro record ({gg_max_rec}g)", delta_color="off")
+                        st.metric("3. Fase Estesa (Oltre Media)", f"Max +{residui_max} gg", f"-Oltre media (entro record {gg_max_rec}g)", delta_color="normal")
                     else:
-                        st.metric("3. Calo Fuori Scala", "Record Storico ⚠️", f"Superati i {gg_max_rec} gg max", delta_color="off")
+                        st.metric("3. Calo Fuori Scala", "Record Storico ⚠️", f"-Superati i {gg_max_rec} gg max", delta_color="normal")
                 with rc4:
                     st.metric(
-                        "4. Prezzo per Tornare in Pari",
+                        f"4. Target Pari (ATH {data_picco_ath})",
                         f"{picco_da_rec:.2f}",
-                        f"Serve +{rialzo_necessario:.2f}% da oggi",
-                        delta_color="off"
+                        f"+{rialzo_necessario:.2f}% potenziale al target",
+                        delta_color="normal"
                     )
+
 
 # ==============================================================================
 # TAB 19: TRADINGVIEW PRO QUANTITATIVO (PARTE 1/5 - CONTROLLI & STRUMENTI)
