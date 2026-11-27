@@ -308,7 +308,15 @@ GERARCHIA_MERCATI = {
         "Metalli & Energia (Oro, Argento, Petrolio, Gas)": ["Contratti Futures"],
         "Obbligazioni & Valute (T-Note, Bund, EUR/USD)": ["Contratti Futures / FX"],
         "Paniere Completo Futures (Tutti)": ["Contratti Futures"],
+    },
+        "🏭 Settori & ETF Tematici": {
+        "USA — Tutti gli 11 Settori SPDR (XLK, XLF, XLC...)": ["ETF Settoriali USA"],
+        "USA — Settori Ciclici & Growth (XLK, XLY, XLC, XLF, XLI)": ["ETF Settoriali USA"],
+        "USA — Settori Difensivi & Real Asset (XLV, XLP, XLU, XLB, XLRE, XLE)": ["ETF Settoriali USA"],
+        "Europa — Settori STOXX 600 (.DE — Banche, Tech, Auto, Difesa...)": ["ETF Settoriali Europa"],
+        "Macro & Tematici USA (Semiconduttori, Biotech, Bond, Oro, Difesa)": ["ETF Tematici & Macro"],
     }
+
 }
 def _parse_market_cap(val):
     try:
@@ -522,6 +530,17 @@ def scarica_paniere_universale(macro_mercato, borsa_indice, cap_scelta):
             else:
                 lista_f = ",".join(dict.fromkeys(",".join(mappa_fut.values()).split(",")))
             return lista_f, f"🌐 Listino Futures & Indici ({len(lista_f.split(','))} strumenti)"
+        # 6. SETTORI AZIONARI USA, EUROPA & ETF MACRO/TEMATICI
+        elif "Settori" in macro_mercato:
+            mappa_settori = {
+                "USA — Tutti gli 11 Settori SPDR (XLK, XLF, XLC...)": "XLK,XLF,XLC,XLV,XLY,XLP,XLE,XLI,XLB,XLU,XLRE",
+                "USA — Settori Ciclici & Growth (XLK, XLY, XLC, XLF, XLI)": "XLK,XLY,XLC,XLF,XLI",
+                "USA — Settori Difensivi & Real Asset (XLV, XLP, XLU, XLB, XLRE, XLE)": "XLV,XLP,XLU,XLB,XLRE,XLE",
+                "Europa — Settori STOXX 600 (.DE — Banche, Tech, Auto, Difesa...)": "EXV1.DE,EXV3.DE,EXV4.DE,EXV5.DE,EXV6.DE,EXH1.DE,EXH4.DE,EXH5.DE,EXH9.DE,EXI5.DE",
+                "Macro & Tematici USA (Semiconduttori, Biotech, Bond, Oro, Difesa)": "SMH,SOXX,XBI,ITA,KRE,XHB,TLT,HYG,GLD,SLV,URA",
+            }
+            lista_s = mappa_settori.get(borsa_indice, "XLK,XLF,XLC,XLV,XLY,XLP,XLE,XLI,XLB,XLU,XLRE")
+            return lista_s, f"🌐 Listino ETF Settoriali & Tematici ({len(lista_s.split(','))} ETF)"
 
 
     except Exception as ex:
@@ -568,7 +587,43 @@ NOMI_STRUMENTI_NOTI = {
     "EURUSD=X": "Cambio EUR / USD",
     "JPY=X": "Cambio USD / JPY",
     "GBPUSD=X": "Cambio GBP / USD",
+    "DX-Y.NYB": "US Dollar Index (DXY)",    
     "DX-Y.NYB": "US Dollar Index (DXY)",
+    # 11 Settori USA (SPDR)
+    "XLK": "USA — Tecnologia (Technology Select SPDR)",
+    "XLF": "USA — Finanziari (Financial Select SPDR)",
+    "XLC": "USA — Comunicazione & Media (Comm. Services SPDR)",
+    "XLV": "USA — Sanità & Pharma (Health Care Select SPDR)",
+    "XLY": "USA — Consumi Discrezionali (Consumer Discret. SPDR)",
+    "XLP": "USA — Beni di Prima Necessità (Consumer Staples SPDR)",
+    "XLE": "USA — Energia & Petrolio (Energy Select SPDR)",
+    "XLI": "USA — Industriali & Difesa (Industrial Select SPDR)",
+    "XLB": "USA — Materiali di Base (Materials Select SPDR)",
+    "XLU": "USA — Utility & Energia Elettrica (Utilities Select SPDR)",
+    "XLRE": "USA — Immobiliare & REIT (Real Estate Select SPDR)",
+    # Settori Europa (iShares STOXX Europe 600 Xetra .DE)
+    "EXV1.DE": "Europa — Banche (STOXX Europe 600 Banks)",
+    "EXV3.DE": "Europa — Tecnologia (STOXX Europe 600 Tech)",
+    "EXV4.DE": "Europa — Sanità & Pharma (STOXX Europe 600 Health)",
+    "EXV5.DE": "Europa — Auto & Componentistica (STOXX Europe 600 Auto)",
+    "EXV6.DE": "Europa — Risorse di Base & Minerari (STOXX 600 Basic Res.)",
+    "EXH1.DE": "Europa — Petrolio & Gas (STOXX Europe 600 Oil & Gas)",
+    "EXH4.DE": "Europa — Beni Industriali (STOXX Europe 600 Industrial)",
+    "EXH5.DE": "Europa — Assicurazioni (STOXX Europe 600 Insurance)",
+    "EXH9.DE": "Europa — Utility & Energia (STOXX Europe 600 Utilities)",
+    "EXI5.DE": "Europa — Telecomunicazioni (STOXX Europe 600 Telecom)",
+    # ETF Macro & Tematici USA
+    "SMH": "Semiconduttori (VanEck Semiconductor ETF)",
+    "SOXX": "Semiconduttori PHLX (iShares Semiconductor ETF)",
+    "XBI": "Biotecnologie (SPDR S&P Biotech ETF)",
+    "ITA": "Aerospazio & Difesa (iShares US Aerospace & Defense)",
+    "KRE": "Banche Regionali USA (SPDR S&P Regional Banking)",
+    "XHB": "Costruzioni & Immobiliare (SPDR S&P Homebuilders)",
+    "TLT": "Treasury USA 20+ Anni (iShares 20+ Year Treasury Bond)",
+    "HYG": "Obbligazioni High Yield (iShares iBoxx High Yield)",
+    "GLD": "Oro Fisico Spot (SPDR Gold Shares)",
+    "SLV": "Argento Fisico Spot (iShares Silver Trust)",
+    "URA": "Uranio & Nucleare (Global X Uranium ETF)",
 }
 
 @st.cache_data(ttl=86400, show_spinner=False)
