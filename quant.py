@@ -1841,9 +1841,9 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
                 if df_bm_foc is not None and not df_bm_foc.empty and tk_dd_focus != bm_usato:
                     df_bm_foc.columns = [str(c).strip() for c in df_bm_foc.columns]
                     bm_s_foc = df_bm_foc["Close"].astype(float).reindex(c_foc.index).ffill().bfill()
-                    if len(bm_s_foc) > 10 and float(bm_s_foc.iloc) > 0:
+                    if len(bm_s_foc) > 10 and float(bm_s_foc.iloc[0]) > 0:
                         rs_raw_f = (c_foc / bm_s_foc.replace(0, np.nan)).ffill().bfill()
-                        rs_norm_f = (rs_raw_f / float(rs_raw_f.iloc)) * 100.0
+                        rs_norm_f = (rs_raw_f / float(rs_raw_f.iloc[0])) * 100.0
                         rs_ema20_f = rs_norm_f.ewm(span=20, adjust=False).mean()
                         has_rs_plot = True
 
