@@ -1083,117 +1083,113 @@ def carica_dati_home_live(lista_tickers_alert):
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def carica_calendario_macro_3stelle():
-    import xml.etree.ElementTree as ET
-
     giorni_it = {0: "Lunedì", 1: "Martedì", 2: "Mercoledì", 3: "Giovedì", 4: "Venerdì", 5: "Sabato", 6: "Domenica"}
     bandiere = {
-        "USD": "🇺🇸 USA (USD)", "US": "🇺🇸 USA (USD)",
-        "EUR": "🇪🇺 Eurozona (EUR)", "EU": "🇪🇺 Eurozona (EUR)", "DE": "🇩🇪 Germania (EUR)", "IT": "🇮🇹 Italia (EUR)", "FR": "🇫🇷 Francia (EUR)",
-        "GBP": "🇬🇧 UK (GBP)", "UK": "🇬🇧 UK (GBP)",
-        "JPY": "🇯🇵 Giappone (JPY)", "JP": "🇯🇵 Giappone (JPY)",
-        "CH": "🇨🇭 Svizzera (CHF)", "CHF": "🇨🇭 Svizzera (CHF)",
-        "CA": "🇨🇦 Canada (CAD)", "CAD": "🇨🇦 Canada (CAD)",
-        "AU": "🇦🇺 Australia (AUD)", "AUD": "🇦🇺 Australia (AUD)",
-        "NZ": "🇳🇿 Nuova Zelanda (NZD)", "NZD": "🇳🇿 Nuova Zelanda (NZD)",
-        "CN": "🇨🇳 Cina (CNY)", "CNY": "🇨🇳 Cina (CNY)",
+        "UNITED STATES": "🇺🇸 USA (USD)", "US": "🇺🇸 USA (USD)",
+        "EURO AREA": "🇪🇺 Eurozona (EUR)", "EUROPEAN UNION": "🇪🇺 Eurozona (EUR)",
+        "GERMANY": "🇩🇪 Germania (EUR)", "ITALY": "🇮🇹 Italia (EUR)", "FRANCE": "🇫🇷 Francia (EUR)", "SPAIN": "🇪🇸 Spagna (EUR)",
+        "UNITED KINGDOM": "🇬🇧 UK (GBP)", "UK": "🇬🇧 UK (GBP)",
+        "JAPAN": "🇯🇵 Giappone (JPY)", "SWITZERLAND": "🇨🇭 Svizzera (CHF)",
+        "CANADA": "🇨🇦 Canada (CAD)", "AUSTRALIA": "🇦🇺 Australia (AUD)",
+        "NEW ZEALAND": "🇳🇿 Nuova Zelanda (NZD)", "CHINA": "🇨🇳 Cina (CNY)"
+    }
+
+    headers_nq_cal = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Origin": "https://nasdaq.com",
+        "Referer": "https://nasdaq.com/"
     }
 
     ora_it = pd.Timestamp.now(tz="Europe/Rome")
     oggi_it = ora_it.normalize()
 
+    # Se è venerdì sera (>20:00) o weekend, parte dal lunedì prossimo; altrimenti da oggi
     if (ora_it.weekday() == 4 and ora_it.hour >= 20) or ora_it.weekday() >= 5:
         giorni_a_lun = (7 - ora_it.weekday()) % 7
         if giorni_a_lun == 0:
             giorni_a_lun = 1
-        soglia_vis = oggi_it + pd.Timedelta(days=giorni_a_lun)
+        start_dt = oggi_it + pd.Timedelta(days=giorni_a_lun)
     else:
-        soglia_vis = oggi_it
+        start_dt = oggi_it
+
+    # Genera i prossimi 5 giorni lavorativi (Lunedì-Venerdì)
+    giorni_target = []
+    cur_d = start_dt
+    while len(giorni_target) < 5:
+        if cur_d.weekday() < 5:
+            giorni_target.append(cur_d)
+        cur_d += pd.Timedelta(days=1)
 
     righe_3s = []
-    log_diag = ""
+    # Parole chiave degli eventi macroeconomici ad Alto Impatto (3 Stelle)
+    kw_3stelle = (
+        "nonfarm", "non-farm", "payroll", "cpi", "consumer price", "inflation", "pce",
+        "gdp", "gross domestic", "fomc", "fed", "interest rate", "rate decision",
+        "ecb", "boe", "boj", "snb", "pmi", "ism", "retail sales", "unemployment",
+        "ppi", "producer price", "jolts", "adp", "powell", "lagarde", "cci", "consumer confidence"
+    )
 
-    # Prova 1: Myfxbook XML (formato data MM-DD-YYYY HH:MM)
-    try:
-        res_mfx = requests.get("https://myfxbook.com", headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
-        log_diag += f"MFX:{res_mfx.status_code} | "
-        if res_mfx.status_code == 200 and "<event" in res_mfx.text:
-            root = ET.fromstring(res_mfx.content)
-            for item in root.findall(".//event"):
-                imp_txt = (item.findtext("impact") or "").strip().lower()
-                if imp_txt not in {"high", "3"}:
-                    continue
-                date_txt = (item.findtext("date") or "").strip()
-                dt_raw = pd.to_datetime(date_txt, format="%m-%d-%Y %H:%M", utc=True, errors="coerce")
-                if pd.isna(dt_raw):
-                    dt_raw = pd.to_datetime(date_txt, utc=True, errors="coerce")
-                if pd.isna(dt_raw):
-                    continue
-                dt_it = dt_raw.tz_convert("Europe/Rome")
-                if dt_it.normalize() < soglia_vis:
+    for g_dt in giorni_target:
+        date_str = g_dt.strftime("%Y-%m-%d")
+        url_nq_eco = f"https://nasdaq.com{date_str}"
+        try:
+            res = requests.get(url_nq_eco, headers=headers_nq_cal, timeout=10)
+            if res.status_code != 200:
+                continue
+            rows_eco = res.json().get("data", {}).get("rows", [])
+            if not rows_eco:
+                continue
+
+            for ev in rows_eco:
+                titolo_ev = str(ev.get("eventName", "")).strip()
+                if not titolo_ev:
                     continue
 
-                paese = (item.findtext("country") or "").strip().upper()
-                is_oggi = dt_it.normalize() == oggi_it
-                nome_g = giorni_it.get(dt_it.weekday(), "")
-                tab_giorno = f"🔥 OGGI ({dt_it.strftime('%d/%m')})" if is_oggi else f"📅 {nome_g} {dt_it.strftime('%d/%m')}"
+                # Filtra gli eventi ad alto impatto (3 Stelle)
+                tit_low = titolo_ev.lower()
+                if not any(k in tit_low for k in kw_3stelle):
+                    continue
+
+                paese = str(ev.get("country", "")).strip().upper()
+                area_lbl = bandiere.get(paese, f"🌐 {paese.title()}" if paese else "🌍 Globale")
+
+                # Orario USA (ET) convertito in orario italiano (+6h)
+                gmt_txt = str(ev.get("gmt", "")).strip()
+                ora_it_str = gmt_txt
+                try:
+                    if ":" in gmt_txt:
+                        dt_utc = pd.to_datetime(f"{date_str} {gmt_txt}", utc=True, errors="coerce")
+                        if pd.notna(dt_utc):
+                            ora_it_str = dt_utc.tz_convert("Europe/Rome").strftime("%H:%M")
+                except Exception:
+                    pass
+
+                previsto = str(ev.get("consensus", "")).strip() or "—"
+                precedente = str(ev.get("previous", "")).strip() or "—"
+
+                is_oggi = g_dt.normalize() == oggi_it
+                nome_g = giorni_it.get(g_dt.weekday(), "")
+                tab_giorno = f"🔥 OGGI ({g_dt.strftime('%d/%m')})" if is_oggi else f"📅 {nome_g} {g_dt.strftime('%d/%m')}"
+
                 righe_3s.append({
                     "Tab_Giorno": tab_giorno,
-                    "Data_Ord": dt_it.strftime("%Y-%m-%d"),
-                    "Ora (IT)": dt_it.strftime("%H:%M"),
+                    "Data_Ord": date_str,
+                    "Ora (IT)": ora_it_str,
                     "Impatto": "⭐⭐⭐ ALTO",
-                    "Area / Valuta": bandiere.get(paese, f"🌐 {paese}"),
-                    "Evento Macroeconomico (3 Stelle)": (item.findtext("title") or "").strip(),
-                    "Previsto": (item.findtext("forecast") or "").strip() or "—",
-                    "Precedente": (item.findtext("previous") or "").strip() or "—",
-                    "_ts": dt_it.timestamp()
+                    "Area / Valuta": area_lbl,
+                    "Evento Macroeconomico (3 Stelle)": titolo_ev,
+                    "Previsto": previsto,
+                    "Precedente": precedente,
                 })
-    except Exception as e1:
-        log_diag += f"MFX_ERR:{str(e1)[:25]} | "
-
-    # Prova 2: Dukascopy Economic Calendar JSON (aperto senza WAF)
-    if not righe_3s:
-        try:
-            url_dk = "https://dukascopy.com"
-            res_dk = requests.get(url_dk, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://dukascopy.com"}, timeout=12)
-            log_diag += f"DK:{res_dk.status_code} ({res_dk.text[:40]!r})"
-            if res_dk.status_code == 200 and res_dk.text.strip().startswith("["):
-                for ev in res_dk.json():
-                    imp_v = str(ev.get("impact", "")).strip().upper()
-                    if imp_v not in {"HIGH", "3", "H"}:
-                        continue
-                    dt_raw = pd.to_datetime(ev.get("date"), unit="ms", utc=True, errors="coerce")
-                    if pd.isna(dt_raw):
-                        dt_raw = pd.to_datetime(ev.get("date"), utc=True, errors="coerce")
-                    if pd.isna(dt_raw):
-                        continue
-                    dt_it = dt_raw.tz_convert("Europe/Rome")
-                    if dt_it.normalize() < soglia_vis:
-                        continue
-
-                    paese = str(ev.get("country", ev.get("currency", ""))).strip().upper()
-                    is_oggi = dt_it.normalize() == oggi_it
-                    nome_g = giorni_it.get(dt_it.weekday(), "")
-                    tab_giorno = f"🔥 OGGI ({dt_it.strftime('%d/%m')})" if is_oggi else f"📅 {nome_g} {dt_it.strftime('%d/%m')}"
-                    righe_3s.append({
-                        "Tab_Giorno": tab_giorno,
-                        "Data_Ord": dt_it.strftime("%Y-%m-%d"),
-                        "Ora (IT)": dt_it.strftime("%H:%M"),
-                        "Impatto": "⭐⭐⭐ ALTO",
-                        "Area / Valuta": bandiere.get(paese, f"🌐 {paese}"),
-                        "Evento Macroeconomico (3 Stelle)": str(ev.get("title", "")).strip(),
-                        "Previsto": str(ev.get("forecast", "—") or "—").strip(),
-                        "Precedente": str(ev.get("previous", "—") or "—").strip(),
-                        "_ts": dt_it.timestamp()
-                    })
-        except Exception as e2:
-            log_diag += f"DK_ERR:{str(e2)[:25]}"
+        except Exception:
+            continue
 
     if not righe_3s:
-        return pd.DataFrame(), log_diag
+        return pd.DataFrame()
 
-    df_cal = pd.DataFrame(righe_3s).drop_duplicates(subset=["Data_Ord", "Ora (IT)", "Evento Macroeconomico (3 Stelle)"])
-    return df_cal.sort_values(by="_ts", ascending=True).drop(columns=["_ts"]).reset_index(drop=True), log_diag
-
+    df_cal = pd.DataFrame(righe_3s).drop_duplicates(subset=["Data_Ord", "Evento Macroeconomico (3 Stelle)"])
+    return df_cal.sort_values(by=["Data_Ord", "Ora (IT)"], ascending=True).reset_index(drop=True)
 
 # ==============================================================================
 # STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
@@ -1486,7 +1482,7 @@ if scelta_modulo == "🏠 Home Page":
 
     # 4. CALENDARIO MACROECONOMICO DINAMICO — LINGUETTE GIORNI LAVORATIVI (TUTTE LE NEWS 3 STELLE)
     st.markdown("##### 📰 4. Calendario Macroeconomico Dinamico — Solo News ⭐⭐⭐ (Tutti i Mercati)")
-    df_macro_3s, diag_cal = carica_calendario_macro_3stelle()
+    df_macro_3s = carica_calendario_macro_3stelle()
     st.caption(f"Stato feed calendario: `{diag_cal}`")
 
 
