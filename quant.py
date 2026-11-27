@@ -1110,55 +1110,90 @@ def carica_calendario_macro_3stelle():
         soglia_vis = oggi_it
 
     righe_3s = []
+    log_diag = ""
 
-    # Fonte 1: Myfxbook Economic Calendar XML (Nessun blocco IP AWS/Cloud)
+    # Prova 1: Myfxbook XML (formato data MM-DD-YYYY HH:MM)
     try:
-        url_mfx = "https://myfxbook.com"
-        res_mfx = requests.get(url_mfx, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        if res_mfx.status_code == 200 and "<" in res_mfx.text:
+        res_mfx = requests.get("https://myfxbook.com", headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
+        log_diag += f"MFX:{res_mfx.status_code} | "
+        if res_mfx.status_code == 200 and "<event" in res_mfx.text:
             root = ET.fromstring(res_mfx.content)
             for item in root.findall(".//event"):
                 imp_txt = (item.findtext("impact") or "").strip().lower()
                 if imp_txt not in {"high", "3"}:
                     continue
-
                 date_txt = (item.findtext("date") or "").strip()
-                dt_raw = pd.to_datetime(date_txt, utc=True, errors="coerce")
+                dt_raw = pd.to_datetime(date_txt, format="%m-%d-%Y %H:%M", utc=True, errors="coerce")
+                if pd.isna(dt_raw):
+                    dt_raw = pd.to_datetime(date_txt, utc=True, errors="coerce")
                 if pd.isna(dt_raw):
                     continue
                 dt_it = dt_raw.tz_convert("Europe/Rome")
-
                 if dt_it.normalize() < soglia_vis:
                     continue
 
                 paese = (item.findtext("country") or "").strip().upper()
-                titolo_ev = (item.findtext("title") or "").strip()
-                previsto = (item.findtext("forecast") or "").strip() or "—"
-                precedente = (item.findtext("previous") or "").strip() or "—"
-
                 is_oggi = dt_it.normalize() == oggi_it
                 nome_g = giorni_it.get(dt_it.weekday(), "")
                 tab_giorno = f"🔥 OGGI ({dt_it.strftime('%d/%m')})" if is_oggi else f"📅 {nome_g} {dt_it.strftime('%d/%m')}"
-
                 righe_3s.append({
                     "Tab_Giorno": tab_giorno,
                     "Data_Ord": dt_it.strftime("%Y-%m-%d"),
                     "Ora (IT)": dt_it.strftime("%H:%M"),
                     "Impatto": "⭐⭐⭐ ALTO",
                     "Area / Valuta": bandiere.get(paese, f"🌐 {paese}"),
-                    "Evento Macroeconomico (3 Stelle)": titolo_ev,
-                    "Previsto": previsto,
-                    "Precedente": precedente,
+                    "Evento Macroeconomico (3 Stelle)": (item.findtext("title") or "").strip(),
+                    "Previsto": (item.findtext("forecast") or "").strip() or "—",
+                    "Precedente": (item.findtext("previous") or "").strip() or "—",
                     "_ts": dt_it.timestamp()
                 })
-    except Exception:
-        pass
+    except Exception as e1:
+        log_diag += f"MFX_ERR:{str(e1)[:25]} | "
+
+    # Prova 2: Dukascopy Economic Calendar JSON (aperto senza WAF)
+    if not righe_3s:
+        try:
+            url_dk = "https://dukascopy.com"
+            res_dk = requests.get(url_dk, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://dukascopy.com"}, timeout=12)
+            log_diag += f"DK:{res_dk.status_code} ({res_dk.text[:40]!r})"
+            if res_dk.status_code == 200 and res_dk.text.strip().startswith("["):
+                for ev in res_dk.json():
+                    imp_v = str(ev.get("impact", "")).strip().upper()
+                    if imp_v not in {"HIGH", "3", "H"}:
+                        continue
+                    dt_raw = pd.to_datetime(ev.get("date"), unit="ms", utc=True, errors="coerce")
+                    if pd.isna(dt_raw):
+                        dt_raw = pd.to_datetime(ev.get("date"), utc=True, errors="coerce")
+                    if pd.isna(dt_raw):
+                        continue
+                    dt_it = dt_raw.tz_convert("Europe/Rome")
+                    if dt_it.normalize() < soglia_vis:
+                        continue
+
+                    paese = str(ev.get("country", ev.get("currency", ""))).strip().upper()
+                    is_oggi = dt_it.normalize() == oggi_it
+                    nome_g = giorni_it.get(dt_it.weekday(), "")
+                    tab_giorno = f"🔥 OGGI ({dt_it.strftime('%d/%m')})" if is_oggi else f"📅 {nome_g} {dt_it.strftime('%d/%m')}"
+                    righe_3s.append({
+                        "Tab_Giorno": tab_giorno,
+                        "Data_Ord": dt_it.strftime("%Y-%m-%d"),
+                        "Ora (IT)": dt_it.strftime("%H:%M"),
+                        "Impatto": "⭐⭐⭐ ALTO",
+                        "Area / Valuta": bandiere.get(paese, f"🌐 {paese}"),
+                        "Evento Macroeconomico (3 Stelle)": str(ev.get("title", "")).strip(),
+                        "Previsto": str(ev.get("forecast", "—") or "—").strip(),
+                        "Precedente": str(ev.get("previous", "—") or "—").strip(),
+                        "_ts": dt_it.timestamp()
+                    })
+        except Exception as e2:
+            log_diag += f"DK_ERR:{str(e2)[:25]}"
 
     if not righe_3s:
-        return pd.DataFrame()
+        return pd.DataFrame(), log_diag
 
     df_cal = pd.DataFrame(righe_3s).drop_duplicates(subset=["Data_Ord", "Ora (IT)", "Evento Macroeconomico (3 Stelle)"])
-    return df_cal.sort_values(by="_ts", ascending=True).drop(columns=["_ts"]).reset_index(drop=True)
+    return df_cal.sort_values(by="_ts", ascending=True).drop(columns=["_ts"]).reset_index(drop=True), log_diag
+
 
 # ==============================================================================
 # STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
@@ -1451,8 +1486,8 @@ if scelta_modulo == "🏠 Home Page":
 
     # 4. CALENDARIO MACROECONOMICO DINAMICO — LINGUETTE GIORNI LAVORATIVI (TUTTE LE NEWS 3 STELLE)
     st.markdown("##### 📰 4. Calendario Macroeconomico Dinamico — Solo News ⭐⭐⭐ (Tutti i Mercati)")
-    df_macro_3s = carica_calendario_macro_3stelle()
-    st.caption(f"Debug calendario — Righe trovate: {len(df_macro_3s)} | Data server: {pd.Timestamp.now(tz='Europe/Rome').strftime('%d/%m/%Y %H:%M')}")
+    df_macro_3s, diag_cal = carica_calendario_macro_3stelle()
+    st.caption(f"Stato feed calendario: `{diag_cal}`")
 
 
     if not df_macro_3s.empty:
