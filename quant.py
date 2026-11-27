@@ -1095,36 +1095,39 @@ def carica_calendario_macro_3stelle():
     ora_it = pd.Timestamp.now(tz="Europe/Rome")
     oggi_it = ora_it.normalize()
 
-    # Se è venerdì sera dopo le 20:00 o weekend, parte dal lunedì successivo
+    # Scarica sempre una finestra ampia di 14 giorni (da ieri fino a +12 giorni) per includere tutta la settimana prossima
+    query_start = oggi_it - pd.Timedelta(days=1)
+    query_end = oggi_it + pd.Timedelta(days=12)
+
+    # Soglia di visualizzazione: se è venerdì sera (>20:00) o weekend, mostra dal lunedì prossimo; altrimenti da oggi
     if (ora_it.weekday() == 4 and ora_it.hour >= 20) or ora_it.weekday() >= 5:
         giorni_a_lun = (7 - ora_it.weekday()) % 7
         if giorni_a_lun == 0:
             giorni_a_lun = 1
-        start_dt = oggi_it + pd.Timedelta(days=giorni_a_lun)
+        soglia_vis = oggi_it + pd.Timedelta(days=giorni_a_lun)
     else:
-        start_dt = oggi_it
-
-    end_dt = start_dt + pd.Timedelta(days=6, hours=23, minutes=59)
+        soglia_vis = oggi_it
 
     url_tv_cal = "https://tradingview.com"
     params_tv = {
-        "from": start_dt.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-        "to": end_dt.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "from": query_start.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "to": query_end.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%S.000Z"),
         "countries": "US,EU,DE,IT,FR,GB,JP,CH,CA,AU,CN"
     }
     headers_tv = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
         "Origin": "https://tradingview.com",
         "Referer": "https://tradingview.com/"
     }
 
     righe_3s = []
     try:
-        res = requests.get(url_tv_cal, params=params_tv, headers=headers_tv, timeout=12)
+        res = requests.get(url_tv_cal, params=params_tv, headers=headers_tv, timeout=15)
         if res.status_code == 200:
             eventi = res.json().get("result", [])
             for ev in eventi:
-                # Su TradingView importance == 1 corrisponde esattamente alle 3 Stelle (Alto Impatto)
+                # Importance == 1 corrisponde alle 3 Stelle (Alto Impatto)
                 if int(ev.get("importance", 0) or 0) < 1:
                     continue
 
@@ -1132,6 +1135,10 @@ def carica_calendario_macro_3stelle():
                 if pd.isna(dt_raw):
                     continue
                 dt_it = dt_raw.tz_convert("Europe/Rome")
+
+                # Filtra solo gli eventi dalla soglia di visualizzazione (Oggi o Lunedì prossimo) in poi
+                if dt_it.normalize() < soglia_vis:
+                    continue
 
                 paese = str(ev.get("country", "")).strip().upper()
                 area_lbl = bandiere.get(paese, f"🌐 {paese}")
@@ -1166,6 +1173,7 @@ def carica_calendario_macro_3stelle():
 
     df_cal = pd.DataFrame(righe_3s).drop_duplicates(subset=["Data_Ord", "Ora (IT)", "Evento Macroeconomico (3 Stelle)"])
     return df_cal.sort_values(by="_ts", ascending=True).drop(columns=["_ts"]).reset_index(drop=True)
+
 
 # ==============================================================================
 # STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
@@ -1459,6 +1467,8 @@ if scelta_modulo == "🏠 Home Page":
     # 4. CALENDARIO MACROECONOMICO DINAMICO — LINGUETTE GIORNI LAVORATIVI (TUTTE LE NEWS 3 STELLE)
     st.markdown("##### 📰 4. Calendario Macroeconomico Dinamico — Solo News ⭐⭐⭐ (Tutti i Mercati)")
     df_macro_3s = carica_calendario_macro_3stelle()
+    st.caption(f"Debug calendario — Righe trovate: {len(df_macro_3s)} | Data server: {pd.Timestamp.now(tz='Europe/Rome').strftime('%d/%m/%Y %H:%M')}")
+
 
     if not df_macro_3s.empty:
         # Estrae l'elenco ordinato dei giorni lavorativi disponibili (es. OGGI, Lunedì, Martedì...)
