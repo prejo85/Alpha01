@@ -1132,7 +1132,7 @@ def carica_calendario_macro_3stelle():
 
     for g_dt in giorni_target:
         date_str = g_dt.strftime("%Y-%m-%d")
-        url_nq_eco = f"https://nasdaq.com{date_str}"
+        url_nq_eco = f"https:///api/calendar/economicevents?date={date_str}"
         try:
             res = requests.get(url_nq_eco, headers=headers_nq_cal, timeout=10)
             if res.status_code != 200:
