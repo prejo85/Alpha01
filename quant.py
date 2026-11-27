@@ -1483,8 +1483,6 @@ if scelta_modulo == "🏠 Home Page":
     # 4. CALENDARIO MACROECONOMICO DINAMICO — LINGUETTE GIORNI LAVORATIVI (TUTTE LE NEWS 3 STELLE)
     st.markdown("##### 📰 4. Calendario Macroeconomico Dinamico — Solo News ⭐⭐⭐ (Tutti i Mercati)")
     df_macro_3s = carica_calendario_macro_3stelle()
-    st.caption(f"Stato feed calendario: `{diag_cal}`")
-
 
     if not df_macro_3s.empty:
         # Estrae l'elenco ordinato dei giorni lavorativi disponibili (es. OGGI, Lunedì, Martedì...)
