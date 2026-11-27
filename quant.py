@@ -982,10 +982,10 @@ def rileva_wedge_e_marubozu(df_in, finestra=35, soglia_corpo_pct=75.0):
         })
 
     return res_default
+    
 @st.cache_data(ttl=900, show_spinner=False)
 def carica_dati_home_live(lista_tickers_alert):
-    # 1. Scarica in un unico batch veloce i 4 indici Macro + gli 11 Settori SPDR + i ticker con alert attivi
-    macro_list = ["^GSPC", "^VIX", "FTSEMIB.MI", "BTC-USD"]
+    macro_list = ["^GSPC", "^VIX", "FTSEMIB.MI", "BTC-USD", "EURUSD=X", "JPY=X", "GBPUSD=X", "CHF=X", "EURCHF=X"]
     settori_list = ["XLK", "XLF", "XLC", "XLV", "XLY", "XLP", "XLE", "XLI", "XLB", "XLU", "XLRE"]
     tutti_simboli = list(dict.fromkeys(macro_list + settori_list + list(lista_tickers_alert)))
 
@@ -1011,7 +1011,6 @@ def carica_dati_home_live(lista_tickers_alert):
             return df_b[sim].dropna(subset=["Close"])
         return df_b.dropna(subset=["Close"])
 
-    # Dati Macro
     macro_out = {}
     for m_tk in macro_list:
         df_m = _get_s(m_tk)
@@ -1023,14 +1022,12 @@ def carica_dati_home_live(lista_tickers_alert):
             dd_6m = ((p_now - float(c_m.max())) / float(c_m.max())) * 100.0 if float(c_m.max()) > 0 else 0.0
             macro_out[m_tk] = {"prezzo": p_now, "chg_1d": chg_1d, "dd_6m": dd_6m}
 
-    # Prezzi attuali dei ticker con Alert
     prezzi_alert = {}
     for a_tk in lista_tickers_alert:
         df_a = _get_s(a_tk)
         if not df_a.empty:
             prezzi_alert[a_tk] = float(df_a["Close"].astype(float).iloc[-1])
 
-    # Flussi e Forza Relativa Settori vs S&P 500 (^GSPC)
     df_spy = _get_s("^GSPC")
     c_spy = df_spy["Close"].astype(float) if len(df_spy) >= 25 else pd.Series(dtype=float)
 
@@ -1077,6 +1074,67 @@ def carica_dati_home_live(lista_tickers_alert):
 
     df_settori_home = pd.DataFrame(settori_rows).sort_values(by="Score", ascending=False).reset_index(drop=True) if settori_rows else pd.DataFrame()
     return macro_out, prezzi_alert, df_settori_home
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def carica_calendario_macro_3stelle():
+    url_ff = "https://faireconomy.media"
+    try:
+        res = requests.get(url_ff, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if res.status_code != 200:
+            return pd.DataFrame()
+        eventi = res.json()
+        if not isinstance(eventi, list):
+            return pd.DataFrame()
+
+        bandiere = {
+            "USD": "🇺🇸 USD", "EUR": "🇪🇺 EUR", "GBP": "🇬🇧 GBP",
+            "JPY": "🇯🇵 JPY", "CHF": "🇨🇭 CHF"
+        }
+
+        righe_3s = []
+        oggi_it = pd.Timestamp.now(tz="Europe/Rome").normalize()
+
+        for ev in eventi:
+            if str(ev.get("impact", "")).strip().lower() != "high":
+                continue
+
+            valuta = str(ev.get("country", "")).strip().upper()
+            if valuta not in {"USD", "EUR", "GBP", "JPY", "CHF"}:
+                continue
+
+            dt_raw = pd.to_datetime(ev.get("date"), utc=True, errors="coerce")
+            if pd.isna(dt_raw):
+                continue
+            dt_it = dt_raw.tz_convert("Europe/Rome")
+
+            if dt_it.normalize() < oggi_it:
+                continue
+
+            valuta_lbl = bandiere.get(valuta, f"🌐 {valuta}")
+            titolo_ev = str(ev.get("title", "")).strip()
+            previsto = str(ev.get("forecast", "")).strip() or "—"
+            precedente = str(ev.get("previous", "")).strip() or "—"
+
+            is_oggi = dt_it.normalize() == oggi_it
+            giorno_lbl = f"🔥 OGGI {dt_it.strftime('%H:%M')}" if is_oggi else dt_it.strftime("%d/%m (%a) %H:%M")
+
+            righe_3s.append({
+                "Data & Ora (IT)": giorno_lbl,
+                "Impatto": "⭐⭐⭐ ALTO",
+                "Valuta": valuta_lbl,
+                "Evento Macroeconomico": titolo_ev,
+                "Previsto": previsto,
+                "Precedente": precedente,
+                "_ts": dt_it.timestamp()
+            })
+
+        if not righe_3s:
+            return pd.DataFrame()
+
+        return pd.DataFrame(righe_3s).sort_values(by="_ts", ascending=True).drop(columns=["_ts"]).reset_index(drop=True)
+    except Exception:
+        return pd.DataFrame()
 
 
 # ==============================================================================
@@ -1176,13 +1234,13 @@ if scelta_modulo == "🏠 Home Page":
 
     h_top1, h_top2 = st.columns([3.2, 1.0])
     with h_top1:
-        st.subheader("🧭 Panoramica Mercati, Alert Prioritari & Rotazione Capitali")
+        st.subheader("🧭 Panoramica Mercati, Cross Major, Alert & Calendario Macro")
     with h_top2:
         if st.button("🔄 Aggiorna Dati Live", use_container_width=True, key="btn_refresh_home"):
             carica_dati_home_live.clear()
+            carica_calendario_macro_3stelle.clear()
             st.rerun()
 
-    # Carica gli alert salvati in alerts_geometrici_v2.json
     db_alert_home = {}
     if os.path.exists("alerts_geometrici_v2.json"):
         try:
@@ -1199,10 +1257,10 @@ if scelta_modulo == "🏠 Home Page":
         if isinstance(v, dict) and v.get("Stato") == "ATTIVO" and v.get("Ticker")
     ]))
 
-    with st.spinner("Sincronizzazione indici macro, alert attivi e flussi settoriali..."):
+    with st.spinner("Sincronizzazione indici macro, cross valutari, alert attivi e flussi settoriali..."):
         macro_dati, prezzi_al_map, df_settori_h = carica_dati_home_live(tuple(tickers_con_alert))
 
-    # 1. FASCIA MACRO: 4 INDICI CHIAVE
+    # 1A. FASCIA MACRO: 4 INDICI CHIAVE
     st.markdown("##### 🌍 1. Termometro Macro & Volatilità Globale")
     m_specs = [
         ("^GSPC", "🇺🇸 S&P 500", False),
@@ -1223,6 +1281,26 @@ if scelta_modulo == "🏠 Home Page":
                 st.metric(lbl_m, val_str, sub_str, delta_color="inverse" if is_vix else "normal")
             else:
                 st.metric(lbl_m, "N/D", "Dati non disponibili", delta_color="off")
+
+    # 1B. STRISCIA VALUTE: I 5 CROSS PRINCIPALI
+    st.markdown("##### 💱 Cross Valutari Principali (Major & Europa)")
+    fx_specs = [
+        ("EURUSD=X", "🇪🇺/🇺🇸 EUR / USD", 4),
+        ("JPY=X", "🇺🇸/🇯🇵 USD / JPY", 2),
+        ("GBPUSD=X", "🇬🇧/🇺🇸 GBP / USD", 4),
+        ("CHF=X", "🇺🇸/🇨🇭 USD / CHF", 4),
+        ("EURCHF=X", "🇪🇺/🇨🇭 EUR / CHF", 4),
+    ]
+    cols_fx = st.columns(5)
+    for idx_fx, (tk_fx, lbl_fx, dec_fx) in enumerate(fx_specs):
+        with cols_fx[idx_fx]:
+            info_fx = macro_dati.get(tk_fx)
+            if info_fx:
+                p_fx = info_fx["prezzo"]
+                c_fx = info_fx["chg_1d"]
+                st.metric(lbl_fx, f"{p_fx:.{dec_fx}f}", f"{c_fx:+.2f}% oggi", delta_color="normal")
+            else:
+                st.metric(lbl_fx, "N/D", "Dati non disp.", delta_color="off")
 
     st.markdown("---")
 
@@ -1302,7 +1380,7 @@ if scelta_modulo == "🏠 Home Page":
         else:
             st.info("📭 Nessun alert attivo trovato in `alerts_geometrici_v2.json`. Disegna una linea o una scadenza temporale in **TradingView Pro** per vederla qui in primo piano.")
     # ==========================================================================
-    # TAB 00: HOME PAGE — RADAR SETTORI & HUB MODULI SCALABILE (PARTE 2/2)
+    # TAB 00: HOME PAGE — RADAR SETTORI, CALENDARIO 3 STELLE & HUB (PARTE 2/2)
     # ==========================================================================
     with col_right_home:
         st.markdown("##### 💰 3. Radar Rotazione Settoriale (Dove Entrano i Soldi)")
@@ -1331,31 +1409,49 @@ if scelta_modulo == "🏠 Home Page":
 
     st.markdown("---")
 
-    # 4. HUB MODULI & FUTURI STUDI (ARCHITETTURA SCALABILE A SCHEDE)
-    st.markdown("##### 🧩 4. Accesso Rapido agli Studi Quantitativi (Hub Moduli)")
+    # 4. CALENDARIO MACROECONOMICO — SOLO NEWS 3 STELLE (VALUTE MAJOR)
+    st.markdown("##### 📰 4. Calendario Macroeconomico Settimanale — Solo News ⭐⭐⭐ (USD, EUR, GBP, JPY, CHF)")
+    df_macro_3s = carica_calendario_macro_3stelle()
+
+    if not df_macro_3s.empty:
+        ev_oggi_count = int(df_macro_3s["Data & Ora (IT)"].str.contains("OGGI").sum())
+        if ev_oggi_count > 0:
+            st.warning(f"⚠️ **Attenzione Volatilità:** Oggi sono in programma **{ev_oggi_count} dati macro a 3 Stelle** (orario italiano). Possibili spike su Indici, Futures e Cross.")
+        else:
+            st.caption("📅 Prossimi dati macroeconomici ad alto impatto della settimana sui principali cross (orario italiano Europe/Rome).")
+
+        st.dataframe(
+            df_macro_3s,
+            use_container_width=True,
+            hide_index=True,
+            height=min(320, 42 + len(df_macro_3s) * 35)
+        )
+    else:
+        st.info("✅ Nessun evento macroeconomico a 3 Stelle rimanente per il resto della settimana sulle valute major.")
+
+    st.markdown("---")
+
+    # 5. HUB MODULI & FUTURI STUDI
+    st.markdown("##### 🧩 5. Accesso Rapido agli Studi Quantitativi (Hub Moduli)")
     moduli_cards = [
         {
             "titolo": "🧪 TradingView Pro",
             "desc": "Grafici multi-timeframe, livelli istituzionali (PWH/PMH), disegni interattivi e salvataggio alert su GitHub.",
-            "stato": "ATTIVO",
             "key_btn": "go_tv_home"
         },
         {
             "titolo": "📁 Analisi Triple-POC",
             "desc": "Scanner Volumetrico su 3 orizzonti (Storico, ATH, Recente), Falling Wedge, Marubozu e livello Entry/SL/TP.",
-            "stato": "ATTIVO",
             "key_btn": "go_poc_home"
         },
         {
             "titolo": "📉 Studio Drawdown & Futures",
             "desc": "Statistica profondità/durata dei cali, tempi stimati di recupero, Forza Relativa (RS) e flussi Smart Money.",
-            "stato": "ATTIVO",
             "key_btn": "go_dd_home"
         },
         {
             "titolo": "📈 Analisi GARCH Volatilità",
             "desc": "Modellazione econometrica GJR-GARCH / EGARCH per individuare Squeeze e picchi di panico prima del trend.",
-            "stato": "ATTIVO",
             "key_btn": "go_garch_home"
         },
     ]
@@ -1374,7 +1470,7 @@ if scelta_modulo == "🏠 Home Page":
                 st.session_state["menu_navigazione_moduli"] = dest_mod
                 st.session_state["jump_to_modulo"] = dest_mod
 
-            st.button(f"Apri {md['titolo'].split(' ', 1)}", use_container_width=True, key=md["key_btn"], on_click=_jump_mod)
+            st.button(f"Apri {md['titolo'].split(' ', 1)[1]}", use_container_width=True, key=md["key_btn"], on_click=_jump_mod)
 
 # ==========================================
 # --- TAB 1: TRE POC SCANNER (PARTE 1/6) ---
