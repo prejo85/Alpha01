@@ -1055,7 +1055,7 @@ with st.sidebar:
 
 
     st.markdown("---")
-    st.caption("Quant Framework Dashboard Pro v3.0 📐")
+    st.caption(" 📐 Quant Dashboard Pro v4.0")
 
 # Configurazione del Titolo dinamico della pagina principale
 st.title(f"{scelta_modulo}")
