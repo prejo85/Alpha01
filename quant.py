@@ -644,9 +644,25 @@ def _ottieni_descrizione_ticker(simbolo):
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
+def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y", benchmark_ticker="SPY"):
     risultati_dd = []
     record_mensili = []
+
+    bench_close = pd.Series(dtype=float)
+    try:
+        df_bm = yf.download(
+            tickers=benchmark_ticker,
+            period=periodo_storico,
+            interval="1d",
+            auto_adjust=False,
+            multi_level_index=False,
+            progress=False
+        )
+        if df_bm is not None and not df_bm.empty:
+            df_bm.columns = [str(c).strip() for c in df_bm.columns]
+            bench_close = df_bm["Close"].astype(float).dropna()
+    except Exception:
+        bench_close = pd.Series(dtype=float)
 
     def _estrai_df_dd(df_raw, simbolo):
         if df_raw is None or df_raw.empty:
@@ -679,12 +695,46 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
 
             desc_nome = _ottieni_descrizione_ticker(tk)
             close_s = df_t["Close"].astype(float)
+            high_s = df_t["High"].astype(float)
+            low_s = df_t["Low"].astype(float)
+            vol_s = df_t["Volume"].astype(float) if "Volume" in df_t.columns else pd.Series(0.0, index=df_t.index)
 
-            # Usa Close per il picco rolling così si evitano spike intraday sporchi sui Futures Yahoo
+            # 1. Flussi Istituzionali: Chaikin Money Flow (CMF 20) & RVOL (5gg vs 20gg)
+            hl_range = (high_s - low_s).replace(0, np.nan)
+            mf_mult = ((close_s - low_s) - (high_s - close_s)) / hl_range
+            mf_vol = mf_mult.fillna(0.0) * vol_s
+            vol_sum20 = vol_s.rolling(20).sum().replace(0, np.nan)
+            cmf_20 = float((mf_vol.rolling(20).sum() / vol_sum20).iloc[-1]) if vol_s.sum() > 0 else 0.0
+            if np.isnan(cmf_20):
+                cmf_20 = 0.0
+
+            vol_5d = float(vol_s.tail(5).mean()) if vol_s.sum() > 0 else 0.0
+            vol_20d = float(vol_s.tail(20).mean()) if vol_s.sum() > 0 else 0.0
+            rvol_5d = round(vol_5d / vol_20d, 2) if vol_20d > 0 else 1.0
+
+            # 2. Forza Relativa (RS) vs Benchmark
+            rs_1m_pct = 0.0
+            rs_3m_pct = 0.0
+            rs_sopra_ema = False
+            if not bench_close.empty and tk != benchmark_ticker:
+                bm_aligned = bench_close.reindex(close_s.index).ffill().bfill()
+                if len(bm_aligned) >= 65 and float(bm_aligned.iloc[-1]) > 0:
+                    rs_line = close_s / bm_aligned.replace(0, np.nan)
+                    rs_ema20 = rs_line.ewm(span=20, adjust=False).mean()
+                    rs_sopra_ema = bool(rs_line.iloc[-1] > rs_ema20.iloc[-1])
+
+                    ret_tk_1m = (close_s.iloc[-1] / close_s.iloc[-22] - 1.0) * 100.0
+                    ret_bm_1m = (bm_aligned.iloc[-1] / bm_aligned.iloc[-22] - 1.0) * 100.0
+                    rs_1m_pct = round(float(ret_tk_1m - ret_bm_1m), 2)
+
+                    ret_tk_3m = (close_s.iloc[-1] / close_s.iloc[-64] - 1.0) * 100.0
+                    ret_bm_3m = (bm_aligned.iloc[-1] / bm_aligned.iloc[-64] - 1.0) * 100.0
+                    rs_3m_pct = round(float(ret_tk_3m - ret_bm_3m), 2)
+
+            # 3. Drawdown & Cicli Storici
             roll_peak = close_s.cummax()
             dd_series = ((close_s - roll_peak) / roll_peak) * 100.0
 
-            # Salva coppia (profondità_max_ciclo, durata_in_giorni) per ogni drawdown chiuso
             cicli_info = []
             mese_durate = {m: [] for m in range(1, 13)}
             in_dd = False
@@ -725,7 +775,6 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
                         "DD_Peggiore": float(sub_m.min()),
                         "Giorni_Recupero": rec_gg
                     })
-
             dd_attuale = float(dd_series.iloc[-1])
             max_dd = float(dd_series.min())
             dd_mediano = float(dd_series.median())
@@ -742,7 +791,6 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
                 else:
                     break
 
-            # Confronta SOLO con i cicli storici di profondità simile a quella attuale
             soglia_simile = min(-2.0, dd_attuale * 0.6)
             cicli_simili = [dur for prof, dur in cicli_info if prof <= soglia_simile]
             if not cicli_simili:
@@ -759,21 +807,51 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
             ret_90_post = float(fwd_90[mask_zona_dd].dropna().mean()) if mask_zona_dd.sum() > 5 else np.nan
             leva_sicura = round(min(10.0, 50.0 / max(5.0, abs(dd_p90))), 1)
 
-            if severita_pct >= 85.0:
-                stato_dd = "🔥 ECCESSO ESTREMO (>85° pct)"
-            elif severita_pct >= 65.0:
-                stato_dd = "🟠 ZONA ACCUMULO (65–85° pct)"
-            elif abs(dd_attuale) <= 5.0:
-                stato_dd = "🟢 VICINO AI MASSIMI"
+            # Punteggio Smart Money (0-100)
+            score_soldi = 0.0
+            if rs_sopra_ema:
+                score_soldi += 35.0
+            if rs_1m_pct > 0:
+                score_soldi += min(25.0, rs_1m_pct * 3.0)
+            if cmf_20 > 0:
+                score_soldi += min(25.0, cmf_20 * 100.0)
+            if rvol_5d > 1.0:
+                score_soldi += min(15.0, (rvol_5d - 1.0) * 30.0)
+            score_soldi = round(max(0.0, min(100.0, score_soldi)), 1)
+
+            if rs_sopra_ema and cmf_20 > 0.05 and rs_1m_pct > 0:
+                flusso_lbl = "💰 FORTE INGRESSO SOLDI"
+            elif rs_sopra_ema and (cmf_20 > 0 or rs_1m_pct > 0):
+                flusso_lbl = "🟢 ACCUMULO IN CORSO"
+            elif not rs_sopra_ema and cmf_20 < -0.05:
+                flusso_lbl = "🔴 DEFLUSSO / VENDITE"
             else:
-                stato_dd = "🔵 RITRACCIAMENTO NORMALE"
+                flusso_lbl = "⚪ NEUTRALE"
+
+            if severita_pct < 50.0 and rs_sopra_ema and rs_1m_pct > 0:
+                stato_dd = "🏆 LEADER RESILIENTE"
+            elif severita_pct >= 65.0 and rs_sopra_ema:
+                stato_dd = "🟢 ACCUMULO SU CALO"
+            elif severita_pct < 50.0 and not rs_sopra_ema and rs_1m_pct < -2.0:
+                stato_dd = "🟠 DEBOLEZZA NASCOSTA"
+            elif severita_pct >= 65.0 and not rs_sopra_ema:
+                stato_dd = "🔴 COLTELLO CHE CADE"
+            else:
+                stato_dd = "🔵 IN LINEA"
 
             risultati_dd.append({
                 "Ticker": tk,
                 "Descrizione": desc_nome,
                 "Prezzo": round(float(close_s.iloc[-1]), 4 if "-USD" in tk or "=X" in tk else 2),
+                "Flusso Capitali": flusso_lbl,
+                "Score Smart Money": score_soldi,
+                "CMF (20g)": round(cmf_20, 2),
+                "RVOL (5g)": f"{rvol_5d:.2f}x",
                 "DD Attuale %": round(dd_attuale, 2),
                 "Severità Storica (Pct)": round(severita_pct, 1),
+                f"RS 1M vs {benchmark_ticker} %": rs_1m_pct,
+                f"RS 3M vs {benchmark_ticker} %": rs_3m_pct,
+                "Regime Drawdown + RS": stato_dd,
                 "DD Mediano %": round(dd_mediano, 2),
                 "DD 90° Pct %": round(dd_p90, 2),
                 "Max DD Storico %": round(max_dd, 2),
@@ -785,7 +863,6 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
                 "Ret. Medio 60g Post-DD %": round(ret_60_post, 2) if not np.isnan(ret_60_post) else None,
                 "Ret. Medio 90g Post-DD %": round(ret_90_post, 2) if not np.isnan(ret_90_post) else None,
                 "Leva Max Sicura": f"{leva_sicura}x",
-                "Regime Drawdown": stato_dd
             })
 
     df_titoli_out = pd.DataFrame(risultati_dd)
@@ -811,117 +888,6 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
 
     return df_titoli_out, df_mesi_out
 
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
-    risultati = []
-
-    def _estrai_df_singolo(df_raw, simbolo):
-        if df_raw is None or df_raw.empty:
-            return pd.DataFrame()
-        if isinstance(df_raw.columns, pd.MultiIndex):
-            if simbolo not in df_raw.columns.get_level_values(0):
-                return pd.DataFrame()
-            return df_raw[simbolo].dropna(subset=["Close", "High", "Low"])
-        return df_raw.dropna(subset=["Close", "High", "Low"])
-
-    for i in range(0, len(lista_tickers), 25):
-        blocco = lista_tickers[i:i + 25]
-        try:
-            df_batch = yf.download(
-                tickers=blocco,
-                period="max",
-                interval=timeframe,
-                group_by="ticker",
-                auto_adjust=False,
-                threads=False,
-                progress=False
-            )
-        except Exception:
-            df_batch = pd.DataFrame()
-
-        for tk in blocco:
-            dec = 4 if "-USD" in tk else 2
-            df_t = _estrai_df_singolo(df_batch, tk)
-
-            if len(df_t) < 5:
-                import time
-                for per_try in ["5y", "2y"]:
-                    try:
-                        time.sleep(0.2)
-                        df_sing = yf.download(
-                            tickers=tk,
-                            period=per_try,
-                            interval=timeframe,
-                            auto_adjust=False,
-                            multi_level_index=False,
-                            progress=False
-                        )
-                        df_t = _estrai_df_singolo(df_sing, tk)
-                        if len(df_t) >= 5:
-                            break
-                    except Exception:
-                        continue
-
-            if len(df_t) >= 5:
-                if "Volume" not in df_t.columns or df_t["Volume"].fillna(0).sum() <= 0:
-                    df_t = df_t.copy()
-                    df_t["Volume"] = 1.0
-
-                p_att = float(df_t["Close"].iloc[-1])
-                ath_val = float(df_t["High"].max())
-                dd_ath_pct = round(((p_att - ath_val) / ath_val) * 100.0, 2) if ath_val > 0 else 0.0
-                d_ath = df_t["High"].idxmax()
-                df_ath = df_t.loc[d_ath:] if len(df_t.loc[d_ath:]) >= 5 else df_t.tail(min(15, len(df_t)))
-                df_rec = df_t.tail(min(giorni_recenti, len(df_t)))
-
-                poc_1, _, _, _, _ = calc_vp(df_t, div=100)
-                poc_2, _, _, _, _ = calc_vp(df_ath, div=80)
-                poc_3, _, _, _, _ = calc_vp(df_rec, div=80)
-
-                poc_1 = poc_1 if poc_1 is not None else p_att
-                poc_2 = poc_2 if poc_2 is not None else p_att
-                poc_3 = poc_3 if poc_3 is not None else p_att
-
-                d1_pct = round(((p_att - poc_1) / poc_1) * 100.0, 2) if poc_1 > 0 else 0.0
-                d2_pct = round(((p_att - poc_2) / poc_2) * 100.0, 2) if poc_2 > 0 else 0.0
-                d3_pct = round(((p_att - poc_3) / poc_3) * 100.0, 2) if poc_3 > 0 else 0.0
-
-                allineamento = (
-                    "🟢 FULL LONG" if (p_att >= poc_1 and p_att >= poc_2 and p_att >= poc_3)
-                    else "🔴 FULL SHORT" if (p_att < poc_1 and p_att < poc_2 and p_att < poc_3)
-                    else "🟡 MISTO"
-                )
-                risultati.append({
-                    "Ticker": tk,
-                    "Prezzo": round(p_att, dec),
-                    "DD ATH %": dd_ath_pct,
-                    "POC Storico": round(poc_1, dec),
-                    "Dist. Storico %": d1_pct,
-                    "POC ATH": round(poc_2, dec),
-                    "Dist. ATH %": d2_pct,
-                    "POC Recente": round(poc_3, dec),
-                    "Dist. Recente %": d3_pct,
-                    "Regime 3-POC": allineamento
-                })
-            else:
-                risultati.append({
-                    "Ticker": tk,
-                    "Prezzo": None,
-                    "DD ATH %": None,
-                    "POC Storico": None,
-                    "Dist. Storico %": None,
-                    "POC ATH": None,
-                    "Dist. ATH %": None,
-                    "POC Recente": None,
-                    "Dist. Recente %": None,
-                    "Regime 3-POC": "⚪ N/D (Dati non disp.)"
-                })
-
-
-    return pd.DataFrame(risultati)
-
-    return pd.DataFrame(risultati)
 def invia_messaggio_telegram_sbloccato(chat_id, testo_messaggio):
     if not BOT_TOKEN:
         return False
@@ -1748,41 +1714,89 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
         # ======================================================================
         # TAB 03: STUDIO STATISTICO DRAWDOWN & FUTURES (PARTE 3/4)
         # ======================================================================
-        fd1, fd2 = st.columns(2)
+        if "Score Smart Money" not in df_dd_res.columns:
+            del st.session_state["df_dd_study_cache"]
+            st.info("🔄 Aggiornamento flussi istituzionali: clicca di nuovo su **Calcola Statistiche Drawdown & Forza Relativa**.")
+            st.stop()
+
+        bm_usato = st.session_state.get("dd_study_bench", "SPY")
+        col_rs_1m = f"RS 1M vs {bm_usato} %"
+        col_rs_3m = f"RS 3M vs {bm_usato} %"
+
+        # RADAR IMMEDIATO: TOP 5 ASSET SU CUI STANNO ENTRANDO I SOLDI
+        top_money = df_dd_res[df_dd_res["Score Smart Money"] >= 50.0].sort_values(by="Score Smart Money", ascending=False).head(5)
+        st.markdown("##### 💰 Radar Flussi Istituzionali: Dove Stanno Entrando i Capitali Ora")
+        if not top_money.empty:
+            cols_top = st.columns(len(top_money))
+            for idx_m, (_, r_m) in enumerate(top_money.iterrows()):
+                with cols_top[idx_m]:
+                    rs_v = float(r_m.get(col_rs_1m, 0.0))
+                    st.metric(
+                        label=f"{r_m['Ticker']} • {str(r_m['Descrizione'])[:18]}",
+                        value=f"Score {int(r_m['Score Smart Money'])}/100",
+                        delta=f"{rs_v:+.2f}% vs {bm_usato} (1M) | CMF {r_m['CMF (20g)']:+.2f}",
+                        delta_color="normal"
+                    )
+        else:
+            st.info("Nessun asset del paniere mostra al momento un forte afflusso istituzionale (Score >= 50). Prova un altro paniere o settore.")
+
+        st.markdown("---")
+
+        fd1, fd2, fd3 = st.columns([1.1, 1.1, 1.3])
         with fd1:
-            min_sev_dd = st.slider(
-                "🎯 Filtra per Severità Storica minima del Drawdown attuale (Percentile):",
-                min_value=0, max_value=95, value=0, step=5,
-                help="Imposta es. 75 per isolare solo i titoli che oggi si trovano nel 25% peggiore dei loro drawdown storici.",
-                key="sl_dd_sev_filter"
+            filtro_flussi = st.selectbox(
+                "💰 Filtra per Flusso Capitali:",
+                [
+                    "Tutti gli strumenti",
+                    "💰 Solo dove entrano i soldi (Forte Ingresso + Accumulo)",
+                    "🟢 Solo Accumulo su Calo (DD >65° pct + RS in Ripresa)",
+                    "🏆 Solo Leader Resilienti (DD Basso + RS Forte)"
+                ],
+                key="sel_filtro_flussi_dd"
             )
         with fd2:
+            min_sev_dd = st.slider(
+                "🎯 Severità Storica minima DD (Pct):",
+                min_value=0, max_value=95, value=0, step=5,
+                key="sl_dd_sev_filter"
+            )
+        with fd3:
             sort_dd_col = st.selectbox(
                 "🔃 Ordina tabella per:",
                 [
+                    "💰 Score Smart Money (Dove entrano i soldi prima)",
+                    f"Forza Relativa 1M vs {bm_usato} (Leader prima)",
                     "Severità Storica (Pct) (Più estremi prima)",
                     "DD Attuale % (Più profondi prima)",
                     "Giorni Stimati al Recupero (Più rapidi prima)",
-                    "Ret. Medio 90g Post-DD % (Miglior rimbalzo storico)",
-                    "Ulcer Index (Più stabili prima)"
+                    "Ret. Medio 90g Post-DD % (Miglior rimbalzo storico)"
                 ],
                 key="sel_sort_dd_study"
             )
 
         df_dd_view = df_dd_res[df_dd_res["Severità Storica (Pct)"] >= min_sev_dd].copy()
-        if "Severità" in sort_dd_col:
+        if "Solo dove entrano i soldi" in filtro_flussi:
+            df_dd_view = df_dd_view[df_dd_view["Flusso Capitali"].str.contains("INGRESSO|ACCUMULO", na=False)]
+        elif "Solo Accumulo su Calo" in filtro_flussi:
+            df_dd_view = df_dd_view[df_dd_view["Regime Drawdown + RS"].str.contains("ACCUMULO", na=False)]
+        elif "Solo Leader Resilienti" in filtro_flussi:
+            df_dd_view = df_dd_view[df_dd_view["Regime Drawdown + RS"].str.contains("LEADER", na=False)]
+
+        if "Score Smart Money" in sort_dd_col:
+            df_dd_view = df_dd_view.sort_values(by="Score Smart Money", ascending=False)
+        elif "Forza Relativa 1M" in sort_dd_col and col_rs_1m in df_dd_view.columns:
+            df_dd_view = df_dd_view.sort_values(by=col_rs_1m, ascending=False)
+        elif "Severità" in sort_dd_col:
             df_dd_view = df_dd_view.sort_values(by="Severità Storica (Pct)", ascending=False)
         elif "DD Attuale" in sort_dd_col:
             df_dd_view = df_dd_view.sort_values(by="DD Attuale %", ascending=True)
         elif "Giorni Stimati" in sort_dd_col:
             df_dd_view = df_dd_view.sort_values(by="Giorni Stimati al Recupero", ascending=True)
-        elif "Ret. Medio" in sort_dd_col:
-            df_dd_view = df_dd_view.sort_values(by="Ret. Medio 90g Post-DD %", ascending=False, na_position="last")
         else:
-            df_dd_view = df_dd_view.sort_values(by="Ulcer Index", ascending=True)
+            df_dd_view = df_dd_view.sort_values(by="Ret. Medio 90g Post-DD %", ascending=False, na_position="last")
         df_dd_view = df_dd_view.reset_index(drop=True)
 
-        st.caption("💡 Clicca su una riga della tabella per visualizzare la **Curva Underwater Storica**, i **Giorni Mancanti al Recupero** e inviare lo strumento a **TradingView Pro**.")
+        st.caption(f"💡 Visualizzati **{len(df_dd_view)}** strumenti. Clicca su una riga per analizzare **Curva Underwater**, **Forza Relativa** e **Giorni al Recupero**.")
         ev_dd_tab = st.dataframe(
             df_dd_view,
             use_container_width=True,
@@ -1805,7 +1819,7 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
             st.markdown("---")
             hc_dd1, hc_dd2 = st.columns([2.5, 1.2])
             with hc_dd1:
-                st.markdown(f"#### 🌊 Analisi Storica Underwater & Distribuzione: **{desc_dd_focus}**")
+                st.markdown(f"#### 🌊 Analisi Storica Underwater & Forza Relativa: **{desc_dd_focus}**")
             with hc_dd2:
                 def _apri_dd_in_tv(sim_dd=tk_dd_focus):
                     st.session_state["tv_test_tk"] = sim_dd
@@ -1814,6 +1828,7 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
                 st.button(f"🧪 Analizza {desc_dd_focus} su TradingView Pro", use_container_width=True, on_click=_apri_dd_in_tv)
 
             df_focus = yf.download(tickers=tk_dd_focus, period=dd_per_val, interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
+            df_bm_foc = yf.download(tickers=bm_usato, period=dd_per_val, interval="1d", auto_adjust=False, multi_level_index=False, progress=False)
             if df_focus is not None and len(df_focus) > 30:
                 df_focus.columns = [str(c).strip() for c in df_focus.columns]
                 c_foc = df_focus["Close"].astype(float)
@@ -1822,17 +1837,33 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
                 p75_val = float(np.percentile(uw_foc, 25))
                 p90_val = float(np.percentile(uw_foc, 10))
 
+                has_rs_plot = False
+                if df_bm_foc is not None and not df_bm_foc.empty and tk_dd_focus != bm_usato:
+                    df_bm_foc.columns = [str(c).strip() for c in df_bm_foc.columns]
+                    bm_s_foc = df_bm_foc["Close"].astype(float).reindex(c_foc.index).ffill().bfill()
+                    if len(bm_s_foc) > 10 and float(bm_s_foc.iloc) > 0:
+                        rs_raw_f = (c_foc / bm_s_foc.replace(0, np.nan)).ffill().bfill()
+                        rs_norm_f = (rs_raw_f / float(rs_raw_f.iloc)) * 100.0
+                        rs_ema20_f = rs_norm_f.ewm(span=20, adjust=False).mean()
+                        has_rs_plot = True
+
                 fig_uw = make_subplots(
-                    rows=2, cols=2,
+                    rows=3 if has_rs_plot else 2,
+                    cols=2,
                     column_widths=[0.72, 0.28],
-                    row_heights=[0.52, 0.48],
-                    specs=[[{"colspan": 2}, None], [{}, {}]],
-                    vertical_spacing=0.10,
+                    row_heights=[0.38, 0.34, 0.28] if has_rs_plot else [0.52, 0.48],
+                    specs=[[{"colspan": 2}, None], [{}, {}], [{"colspan": 2}, None]] if has_rs_plot else [[{"colspan": 2}, None], [{}, {}]],
+                    vertical_spacing=0.09,
                     horizontal_spacing=0.06,
                     subplot_titles=(
-                        f"Prezzo & Massimi Storici Rolling — {desc_dd_focus}",
-                        "Curva Underwater (Drawdown % dai Massimi)",
-                        "Distribuzione Frequenza Drawdown"
+                        f"1. Prezzo & Massimi Storici Rolling — {desc_dd_focus}",
+                        "2. Curva Underwater (Drawdown % dai Massimi)",
+                        "Distribuzione Frequenza DD",
+                        f"3. Forza Relativa (RS) vs {bm_usato} (Verde) & EMA 20 (Arancione) — Sopra EMA = Leader/Accumulo"
+                    ) if has_rs_plot else (
+                        f"1. Prezzo & Massimi Storici Rolling — {desc_dd_focus}",
+                        "2. Curva Underwater (Drawdown % dai Massimi)",
+                        "Distribuzione Frequenza DD"
                     )
                 )
 
@@ -1846,10 +1877,13 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
                 fig_uw.add_trace(grp.Histogram(y=uw_foc, nbinsy=35, marker_color="rgba(56, 189, 248, 0.55)", name="Frequenza", showlegend=False), row=2, col=2)
                 fig_uw.add_hline(y=float(uw_foc.iloc[-1]), line_color="#22c55e", line_width=2.2, annotation_text=f"Oggi: {uw_foc.iloc[-1]:.1f}%", row=2, col=2)
 
-                fig_uw.update_layout(template="plotly_dark", height=620, margin=dict(l=20, r=20, t=35, b=20), showlegend=False)
-                st.plotly_chart(fig_uw, use_container_width=True, key=f"uw_chart_{tk_dd_focus}")
+                if has_rs_plot:
+                    fig_uw.add_trace(grp.Scatter(x=df_focus.index, y=rs_norm_f, mode="lines", name=f"RS vs {bm_usato}", line=dict(color="#22c55e", width=2.0)), row=3, col=1)
+                    fig_uw.add_trace(grp.Scatter(x=df_focus.index, y=rs_ema20_f, mode="lines", name="EMA 20 RS", line=dict(color="#f59e0b", width=1.4, dash="dash")), row=3, col=1)
+                    fig_uw.add_hline(y=100.0, line_dash="dot", line_color="rgba(255,255,255,0.25)", row=3, col=1)
 
-                # RIEPILOGO CHIARO TEMPI DI RECUPERO DEL TITOLO SELEZIONATO CON DATE ESATTE
+                fig_uw.update_layout(template="plotly_dark", height=760 if has_rs_plot else 620, margin=dict(l=20, r=20, t=35, b=20), showlegend=False)
+                st.plotly_chart(fig_uw, use_container_width=True, key=f"uw_chart_{tk_dd_focus}_{bm_usato}")
                 gg_attuali_uw = int(riga_sel["Giorni Underwater"])
                 gg_storici_rec = int(riga_sel["Recupero Storico Medio (gg)"])
                 gg_max_rec = int(riga_sel.get("Recupero Max Storico (gg)", gg_storici_rec))
@@ -1913,7 +1947,6 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
                         f"+{rialzo_necessario:.2f}% potenziale al target",
                         delta_color="normal"
                     )
-
 
 # ==============================================================================
 # TAB 19: TRADINGVIEW PRO QUANTITATIVO (PARTE 1/5 - CONTROLLI & STRUMENTI)
