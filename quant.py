@@ -624,14 +624,13 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
 
             desc_nome = _ottieni_descrizione_ticker(tk)
             close_s = df_t["Close"].astype(float)
-            low_s = df_t["Low"].astype(float)
-            high_s = df_t["High"].astype(float)
 
-            roll_peak = high_s.cummax()
+            # Usa Close per il picco rolling così si evitano spike intraday sporchi sui Futures Yahoo
+            roll_peak = close_s.cummax()
             dd_series = ((close_s - roll_peak) / roll_peak) * 100.0
-            dd_intraday = ((low_s - roll_peak) / roll_peak) * 100.0
 
-            durate_cicli = []
+            # Salva coppia (profondità_max_ciclo, durata_in_giorni) per ogni drawdown chiuso
+            cicli_info = []
             mese_durate = {m: [] for m in range(1, 13)}
             in_dd = False
             start_idx = 0
@@ -656,7 +655,7 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
                     if in_dd:
                         dur_gg = k - start_idx
                         if dur_gg >= 2 and min_dd_ciclo <= -2.0:
-                            durate_cicli.append(dur_gg)
+                            cicli_info.append((min_dd_ciclo, dur_gg))
                             mese_durate[mese_min_ciclo].append(dur_gg)
                         in_dd = False
 
@@ -673,7 +672,7 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
                     })
 
             dd_attuale = float(dd_series.iloc[-1])
-            max_dd = float(dd_intraday.min())
+            max_dd = float(dd_series.min())
             dd_mediano = float(dd_series.median())
             dd_p75 = float(np.percentile(dd_series, 25))
             dd_p90 = float(np.percentile(dd_series, 10))
@@ -688,7 +687,14 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
                 else:
                     break
 
-            durata_media_rec = int(round(np.mean(durate_cicli))) if len(durate_cicli) > 0 else 0
+            # Confronta SOLO con i cicli storici di profondità simile a quella attuale
+            soglia_simile = min(-2.0, dd_attuale * 0.6)
+            cicli_simili = [dur for prof, dur in cicli_info if prof <= soglia_simile]
+            if not cicli_simili:
+                cicli_simili = [dur for _, dur in cicli_info]
+
+            durata_media_rec = int(round(np.mean(cicli_simili))) if cicli_simili else 0
+            durata_max_rec = int(max(cicli_simili)) if cicli_simili else 0
             gg_stimati_mancanti = max(0, durata_media_rec - giorni_uw) if dd_attuale < -0.5 else 0
 
             fwd_60 = ((close_s.shift(-60) - close_s) / close_s) * 100.0
@@ -719,6 +725,7 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
                 "Ulcer Index": round(ulcer_idx, 2),
                 "Giorni Underwater": int(giorni_uw),
                 "Recupero Storico Medio (gg)": durata_media_rec,
+                "Recupero Max Storico (gg)": durata_max_rec,
                 "Giorni Stimati al Recupero": gg_stimati_mancanti,
                 "Ret. Medio 60g Post-DD %": round(ret_60_post, 2) if not np.isnan(ret_60_post) else None,
                 "Ret. Medio 90g Post-DD %": round(ret_90_post, 2) if not np.isnan(ret_90_post) else None,
@@ -748,6 +755,7 @@ def calcola_stats_drawdown_paniere(lista_tickers, periodo_storico="5y"):
         df_mesi_out = pd.DataFrame()
 
     return df_titoli_out, df_mesi_out
+
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def scansiona_poc_paniere(lista_tickers, timeframe="1d", giorni_recenti=90):
@@ -1752,8 +1760,7 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
             if df_focus is not None and len(df_focus) > 30:
                 df_focus.columns = [str(c).strip() for c in df_focus.columns]
                 c_foc = df_focus["Close"].astype(float)
-                h_foc = df_focus["High"].astype(float)
-                peak_foc = h_foc.cummax()
+                peak_foc = c_foc.cummax()
                 uw_foc = ((c_foc - peak_foc) / peak_foc) * 100.0
                 p75_val = float(np.percentile(uw_foc, 25))
                 p90_val = float(np.percentile(uw_foc, 10))
@@ -1785,30 +1792,49 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
                 fig_uw.update_layout(template="plotly_dark", height=620, margin=dict(l=20, r=20, t=35, b=20), showlegend=False)
                 st.plotly_chart(fig_uw, use_container_width=True, key=f"uw_chart_{tk_dd_focus}")
 
-                # RIEPILOGO TEMPI DI RECUPERO DEL TITOLO SELEZIONATO SOTTO I GRAFICI
+                # RIEPILOGO CHIARO TEMPI DI RECUPERO DEL TITOLO SELEZIONATO
                 gg_attuali_uw = int(riga_sel["Giorni Underwater"])
                 gg_storici_rec = int(riga_sel["Recupero Storico Medio (gg)"])
+                gg_max_rec = int(riga_sel.get("Recupero Max Storico (gg)", gg_storici_rec))
                 gg_mancanti_rec = int(riga_sel["Giorni Stimati al Recupero"])
                 dd_oggi_val = float(riga_sel["DD Attuale %"])
                 picco_da_rec = float(peak_foc.iloc[-1])
                 prezzo_oggi_foc = float(c_foc.iloc[-1])
                 rialzo_necessario = ((picco_da_rec - prezzo_oggi_foc) / prezzo_oggi_foc) * 100.0 if prezzo_oggi_foc > 0 else 0.0
 
-                st.markdown(f"##### ⏱️ Stima Orizzonte di Recupero del Drawdown Attuale — **{desc_dd_focus}**")
+                st.markdown(f"##### ⏱️ Analisi Tempi di Recupero — **{desc_dd_focus}**")
                 rc1, rc2, rc3, rc4 = st.columns(4)
                 with rc1:
-                    st.metric("Giorni Già Trascorsi Sotto il Picco", f"{gg_attuali_uw} gg", f"DD attuale: {dd_oggi_val:.2f}%")
+                    st.metric(
+                        "1. Giorni Già in Calo",
+                        f"{gg_attuali_uw} gg borsa",
+                        f"Calo attuale: {dd_oggi_val:.2f}%",
+                        delta_color="off"
+                    )
                 with rc2:
-                    st.metric("Durata Media Storica dei Cali", f"{gg_storici_rec} gg", "Media cicli DD > 2%")
+                    st.metric(
+                        "2. Tempo Medio Cali Simili",
+                        f"{gg_storici_rec} gg borsa",
+                        f"Peggiore storico: {gg_max_rec} gg",
+                        delta_color="off"
+                    )
                 with rc3:
                     if abs(dd_oggi_val) <= 0.5:
-                        st.metric("Giorni Stimati al Recupero", "0 gg (Sui Massimi)", "✅ Nessun drawdown attivo")
+                        st.metric("3. Stato Recupero", "Sui Massimi ✅", "Nessun calo da recuperare", delta_color="off")
                     elif gg_mancanti_rec > 0:
-                        st.metric("Giorni Borsa Stimati al Recupero", f"~ {gg_mancanti_rec} gg", f"Circa {round(gg_mancanti_rec / 21, 1)} mesi")
+                        st.metric("3. Giorni Mancanti (Stima)", f"~ {gg_mancanti_rec} gg", f"Circa {round(gg_mancanti_rec / 21, 1)} mesi di borsa", delta_color="off")
+                    elif gg_attuali_uw <= gg_max_rec:
+                        residui_max = gg_max_rec - gg_attuali_uw
+                        st.metric("3. Fase Estesa (Oltre Media)", f"Max +{residui_max} gg", f"Sopra media, entro record ({gg_max_rec}g)", delta_color="off")
                     else:
-                        st.metric("Giorni Borsa Stimati al Recupero", "Oltre la media (+)", f"Già oltre di {gg_attuali_uw - gg_storici_rec} gg")
+                        st.metric("3. Calo Fuori Scala", "Record Storico ⚠️", f"Superati i {gg_max_rec} gg max", delta_color="off")
                 with rc4:
-                    st.metric("Target Prezzo Recupero (ATH)", f"{picco_da_rec:.2f}", f"+{rialzo_necessario:.2f}% per tornare in pari")
+                    st.metric(
+                        "4. Prezzo per Tornare in Pari",
+                        f"{picco_da_rec:.2f}",
+                        f"Serve +{rialzo_necessario:.2f}% da oggi",
+                        delta_color="off"
+                    )
 
 # ==============================================================================
 # TAB 19: TRADINGVIEW PRO QUANTITATIVO (PARTE 1/5 - CONTROLLI & STRUMENTI)
