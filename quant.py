@@ -20,8 +20,7 @@ from urllib.parse import quote
 # Carica le chiavi dal file .env (se presente)
 load_dotenv()
 
-st.set_page_config(layout="wide", page_title="POC Scanner Pro", page_icon="📐")
-
+st.set_page_config(layout="wide", page_title="QuantAnalisys Pro", page_icon="logo_fmjp.png", initial_sidebar_state="collapsed")
 
 # ==============================================================================
 # --- SCHERMATA DI ACCESSO (LOGIN PAGE CON SFONDO PERSONALIZZATO) ---
@@ -1240,35 +1239,32 @@ def carica_calendario_macro_3stelle():
     return df_cal.sort_values(by=["Data_Ord", "Ora (IT)"], ascending=True).reset_index(drop=True)
 
 # ==============================================================================
-# STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
+# GESTIONE NAVIGAZIONE MODULI (HOME A SCHERMO INTERO + BARRA RITORNO HOME)
 # ==============================================================================
-with st.sidebar:
-    if os.path.exists("logo_fmjp.png"):
-        st.image("logo_fmjp.png", use_container_width=True)
-    st.markdown("## 📺 Seleziona l'analisi che vuoi approfondire:")
-    st.markdown("🤖 **Menu Navigazione Moduli**")
+opzioni_menu = [
+    "🏠 Home Page",
+    "🧪 TradingView Pro",
+    "📁 Analisi Triple-POC",
+    "📉 Studio Drawdown & Futures",
+    "📈 Analisi GARCH Volatilità",
+]
 
-    opzioni_menu = [
-        "🏠 Home Page",
-        "🧪 TradingView Pro",
-        "📁 Analisi Triple-POC",
-        "📉 Studio Drawdown & Futures",
-        "📈 Analisi GARCH Volatilità",
-    ]
+if "modulo_attivo" not in st.session_state:
+    st.session_state["modulo_attivo"] = "🏠 Home Page"
 
-    if "jump_to_modulo" in st.session_state and st.session_state["jump_to_modulo"]:
-        st.session_state["menu_navigazione_moduli"] = st.session_state.pop("jump_to_modulo")
+if "jump_to_modulo" in st.session_state and st.session_state["jump_to_modulo"]:
+    st.session_state["modulo_attivo"] = st.session_state.pop("jump_to_modulo")
 
-    modulo_corrente = st.session_state.get("menu_navigazione_moduli", opzioni_menu[0])
-    idx_default = opzioni_menu.index(modulo_corrente) if modulo_corrente in opzioni_menu else 0
+scelta_modulo = st.session_state["modulo_attivo"]
 
-    scelta_modulo = st.radio(
-        label="Seleziona Modulo Operativo:",
-        options=opzioni_menu,
-        index=idx_default,
-        label_visibility="collapsed",
-        key="menu_navigazione_moduli",
-    )
+# Nasconde sempre la sidebar quando sei in Home Page (o usa navigazione pulita senza sidebar)
+st.markdown("""
+<style>
+    section[data-testid="stSidebar"] { display: none !important; }
+    button[kind="header"] { display: none !important; }
+</style>
+""", unsafe_allow_html=True)
+
     
     st.markdown("---")
     if st.button("🔒 Disconnetti (Logout)", use_container_width=True):
@@ -1280,7 +1276,52 @@ with st.sidebar:
     st.caption(" 📐 Quant Dashboard Pro v4.0")
 
 # Configurazione del Titolo dinamico della pagina principale
-st.title(f"{scelta_modulo}")
+logo_b64 = _get_base64_bg("logo_fmjp.png")
+
+if scelta_modulo == "🏠 Home Page":
+    hdr_c1, hdr_c2, hdr_c3 = st.columns([0.85, 3.3, 0.85])
+    with hdr_c1:
+        if logo_b64:
+            st.markdown(
+                f"<img src='data:image/png;base64,{logo_b64}' style='width: 115px; border-radius: 12px; box-shadow: 0 4px 18px rgba(56,189,248,0.25);'>",
+                unsafe_allow_html=True
+            )
+    with hdr_c2:
+        st.markdown("""
+        <div style='padding-top: 6px;'>
+            <h1 style='margin:0; font-size: 2.1rem; color: #f8fafc;'>QUANTANALISYS PRO — Control Room</h1>
+            <p style='margin:2px 0 0 0; color: #94a3b8; font-size: 14px;'>Sala Operativa Quantitativa, Monitor Alert & Rotazione Capitali</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with hdr_c3:
+        st.markdown("<div style='padding-top: 10px;'></div>", unsafe_allow_html=True)
+        if st.button("🔒 Logout", use_container_width=True, key="btn_logout_home"):
+            st.session_state["autenticato"] = False
+            st.rerun()
+else:
+    # Barra superiore in ogni modulo con pulsante rapido per tornare alla Home Page
+    nav_c1, nav_c2, nav_c3 = st.columns([1.15, 3.2, 0.75])
+    with nav_c1:
+        def _torna_home():
+            st.session_state["modulo_attivo"] = "🏠 Home Page"
+            st.session_state["jump_to_modulo"] = "🏠 Home Page"
+
+        if logo_b64:
+            st.markdown(
+                f"<div style='display:flex; align-items:center; gap:10px; margin-bottom:4px;'>"
+                f"<img src='data:image/png;base64,{logo_b64}' style='width: 44px; border-radius: 8px;'>"
+                f"<span style='color:#38bdf8; font-weight:700; font-size:13px;'>QUANTANALISYS</span></div>",
+                unsafe_allow_html=True
+            )
+        st.button("🏠 Torna alla Home Page", use_container_width=True, key=f"btn_back_home_{scelta_modulo}", on_click=_torna_home)
+    with nav_c2:
+        st.title(f"{scelta_modulo}")
+    with nav_c3:
+        st.markdown("<div style='padding-top: 14px;'></div>", unsafe_allow_html=True)
+        if st.button("🔒 Logout", use_container_width=True, key=f"btn_logout_{scelta_modulo}"):
+            st.session_state["autenticato"] = False
+            st.rerun()
+
 
 # ==============================================================================
 # DISCOVERY COMPONENT: NOTE DI ARCHITETTURA E SCOPO OPERATIVO DEL MODULO SELEZIONATO
@@ -1594,7 +1635,7 @@ if scelta_modulo == "🏠 Home Page":
             """, unsafe_allow_html=True)
 
             def _jump_mod(dest_mod=md["titolo"]):
-                st.session_state["menu_navigazione_moduli"] = dest_mod
+                st.session_state["modulo_attivo"] = dest_mod
                 st.session_state["jump_to_modulo"] = dest_mod
 
             st.button(f"Apri {md['titolo'].split(' ', 1)[1]}", use_container_width=True, key=md["key_btn"], on_click=_jump_mod)
