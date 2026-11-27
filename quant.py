@@ -1083,11 +1083,14 @@ def carica_dati_home_live(lista_tickers_alert):
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def carica_calendario_macro_3stelle():
-    # Scarica settimana corrente + settimana successiva per avere sempre tutti i prossimi giorni lavorativi
     urls_ff = [
         "https://faireconomy.media",
         "https://faireconomy.media"
     ]
+    headers_cal = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*"
+    }
     bandiere = {
         "USD": "🇺🇸 USA (USD)", "EUR": "🇪🇺 Eurozona (EUR)", "GBP": "🇬🇧 UK (GBP)",
         "JPY": "🇯🇵 Giappone (JPY)", "CHF": "🇨🇭 Svizzera (CHF)", "CAD": "🇨🇦 Canada (CAD)",
@@ -1097,19 +1100,20 @@ def carica_calendario_macro_3stelle():
     giorni_it = {0: "Lunedì", 1: "Martedì", 2: "Mercoledì", 3: "Giovedì", 4: "Venerdì", 5: "Sabato", 6: "Domenica"}
 
     righe_3s = []
-    oggi_it = pd.Timestamp.now(tz="Europe/Rome").normalize()
+    # Prende come riferimento la data odierna (o il lunedì successivo se è venerdì sera/weekend)
+    ora_it = pd.Timestamp.now(tz="Europe/Rome")
+    oggi_it = ora_it.normalize()
 
     for u_ff in urls_ff:
         try:
-            res = requests.get(u_ff, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-            if res.status_code != 200:
+            res = requests.get(u_ff, headers=headers_cal, timeout=10)
+            if res.status_code != 200 or not res.text.strip():
                 continue
             eventi = res.json()
             if not isinstance(eventi, list):
                 continue
 
             for ev in eventi:
-                # Filtra TUTTE le notizie a 3 Stelle (High Impact) di qualsiasi area/asset class
                 if str(ev.get("impact", "")).strip().lower() != "high":
                     continue
 
@@ -1118,7 +1122,9 @@ def carica_calendario_macro_3stelle():
                     continue
                 dt_it = dt_raw.tz_convert("Europe/Rome")
 
-                if dt_it.normalize() < oggi_it:
+                # Se siamo venerdì dopo le 21:00 o nel weekend, mostra i prossimi 7 giorni; altrimenti mostra da oggi in poi
+                soglia_inizio = oggi_it + pd.Timedelta(days=1) if (ora_it.weekday() == 4 and ora_it.hour >= 21) or ora_it.weekday() >= 5 else oggi_it
+                if dt_it.normalize() < soglia_inizio:
                     continue
 
                 paese = str(ev.get("country", "")).strip().upper()
@@ -1145,11 +1151,40 @@ def carica_calendario_macro_3stelle():
         except Exception:
             continue
 
+    # Se nel weekend ForexFactory non ha ancora pubblicato nextweek, carica gli eventi della settimana corrente come riferimento
+    if not righe_3s:
+        try:
+            res_fb = requests.get("https://faireconomy.media", headers=headers_cal, timeout=10)
+            if res_fb.status_code == 200 and res_fb.text.strip():
+                for ev in res_fb.json():
+                    if str(ev.get("impact", "")).strip().lower() != "high":
+                        continue
+                    dt_raw = pd.to_datetime(ev.get("date"), utc=True, errors="coerce")
+                    if pd.isna(dt_raw):
+                        continue
+                    dt_it = dt_raw.tz_convert("Europe/Rome")
+                    paese = str(ev.get("country", "")).strip().upper()
+                    nome_g = giorni_it.get(dt_it.weekday(), "")
+                    righe_3s.append({
+                        "Tab_Giorno": f"📅 {nome_g} {dt_it.strftime('%d/%m')}",
+                        "Data_Ord": dt_it.strftime("%Y-%m-%d"),
+                        "Ora (IT)": dt_it.strftime("%H:%M"),
+                        "Impatto": "⭐⭐⭐ ALTO",
+                        "Area / Valuta": bandiere.get(paese, f"🌐 {paese}"),
+                        "Evento Macroeconomico (3 Stelle)": str(ev.get("title", "")).strip(),
+                        "Previsto": str(ev.get("forecast", "")).strip() or "—",
+                        "Precedente": str(ev.get("previous", "")).strip() or "—",
+                        "_ts": dt_it.timestamp()
+                    })
+        except Exception:
+            pass
+
     if not righe_3s:
         return pd.DataFrame()
 
     df_cal = pd.DataFrame(righe_3s).drop_duplicates(subset=["Data_Ord", "Ora (IT)", "Evento Macroeconomico (3 Stelle)"])
     return df_cal.sort_values(by="_ts", ascending=True).drop(columns=["_ts"]).reset_index(drop=True)
+
 
 # ==============================================================================
 # STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
