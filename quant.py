@@ -982,6 +982,101 @@ def rileva_wedge_e_marubozu(df_in, finestra=35, soglia_corpo_pct=75.0):
         })
 
     return res_default
+@st.cache_data(ttl=900, show_spinner=False)
+def carica_dati_home_live(lista_tickers_alert):
+    # 1. Scarica in un unico batch veloce i 4 indici Macro + gli 11 Settori SPDR + i ticker con alert attivi
+    macro_list = ["^GSPC", "^VIX", "FTSEMIB.MI", "BTC-USD"]
+    settori_list = ["XLK", "XLF", "XLC", "XLV", "XLY", "XLP", "XLE", "XLI", "XLB", "XLU", "XLRE"]
+    tutti_simboli = list(dict.fromkeys(macro_list + settori_list + list(lista_tickers_alert)))
+
+    try:
+        df_b = yf.download(
+            tickers=tutti_simboli,
+            period="6mo",
+            interval="1d",
+            group_by="ticker",
+            auto_adjust=False,
+            threads=False,
+            progress=False
+        )
+    except Exception:
+        df_b = pd.DataFrame()
+
+    def _get_s(sim):
+        if df_b is None or df_b.empty:
+            return pd.DataFrame()
+        if isinstance(df_b.columns, pd.MultiIndex):
+            if sim not in df_b.columns.get_level_values(0):
+                return pd.DataFrame()
+            return df_b[sim].dropna(subset=["Close"])
+        return df_b.dropna(subset=["Close"])
+
+    # Dati Macro
+    macro_out = {}
+    for m_tk in macro_list:
+        df_m = _get_s(m_tk)
+        if len(df_m) >= 2:
+            c_m = df_m["Close"].astype(float)
+            p_now = float(c_m.iloc[-1])
+            p_prev = float(c_m.iloc[-2])
+            chg_1d = ((p_now - p_prev) / p_prev) * 100.0 if p_prev > 0 else 0.0
+            dd_6m = ((p_now - float(c_m.max())) / float(c_m.max())) * 100.0 if float(c_m.max()) > 0 else 0.0
+            macro_out[m_tk] = {"prezzo": p_now, "chg_1d": chg_1d, "dd_6m": dd_6m}
+
+    # Prezzi attuali dei ticker con Alert
+    prezzi_alert = {}
+    for a_tk in lista_tickers_alert:
+        df_a = _get_s(a_tk)
+        if not df_a.empty:
+            prezzi_alert[a_tk] = float(df_a["Close"].astype(float).iloc[-1])
+
+    # Flussi e Forza Relativa Settori vs S&P 500 (^GSPC)
+    df_spy = _get_s("^GSPC")
+    c_spy = df_spy["Close"].astype(float) if len(df_spy) >= 25 else pd.Series(dtype=float)
+
+    settori_rows = []
+    for s_tk in settori_list:
+        df_s = _get_s(s_tk)
+        if len(df_s) >= 25:
+            c_s = df_s["Close"].astype(float)
+            h_s = df_s["High"].astype(float)
+            l_s = df_s["Low"].astype(float)
+            v_s = df_s["Volume"].astype(float) if "Volume" in df_s.columns else pd.Series(0.0, index=df_s.index)
+
+            hl = (h_s - l_s).replace(0, np.nan)
+            mf_m = (((c_s - l_s) - (h_s - c_s)) / hl).fillna(0.0) * v_s
+            cmf = float((mf_m.rolling(20).sum() / v_s.rolling(20).sum().replace(0, np.nan)).iloc[-1]) if v_s.sum() > 0 else 0.0
+            if np.isnan(cmf):
+                cmf = 0.0
+
+            rs_1m = 0.0
+            rs_up = False
+            if not c_spy.empty:
+                spy_al = c_spy.reindex(c_s.index).ffill().bfill()
+                if len(spy_al) >= 22 and float(spy_al.iloc[-1]) > 0:
+                    rs_l = c_s / spy_al
+                    rs_up = bool(rs_l.iloc[-1] > rs_l.ewm(span=20, adjust=False).mean().iloc[-1])
+                    rs_1m = float(((c_s.iloc[-1] / c_s.iloc[-22] - 1.0) - (spy_al.iloc[-1] / spy_al.iloc[-22] - 1.0)) * 100.0)
+
+            score = 0.0
+            if rs_up:
+                score += 40.0
+            if rs_1m > 0:
+                score += min(30.0, rs_1m * 4.0)
+            if cmf > 0:
+                score += min(30.0, cmf * 120.0)
+            score = round(max(0.0, min(100.0, score)), 1)
+
+            settori_rows.append({
+                "Ticker": s_tk,
+                "Settore": _ottieni_descrizione_ticker(s_tk).replace("USA — ", ""),
+                "Score": score,
+                "RS 1M %": round(rs_1m, 2),
+                "CMF 20g": round(cmf, 2)
+            })
+
+    df_settori_home = pd.DataFrame(settori_rows).sort_values(by="Score", ascending=False).reset_index(drop=True) if settori_rows else pd.DataFrame()
+    return macro_out, prezzi_alert, df_settori_home
 
 
 # ==============================================================================
@@ -994,6 +1089,7 @@ with st.sidebar:
     st.markdown("🤖 **Menu Navigazione Moduli**")
 
     opzioni_menu = [
+        "🏠 Home Page",
         "🧪 TradingView Pro",
         "📁 Analisi Triple-POC",
         "📉 Studio Drawdown & Futures",
@@ -1029,8 +1125,12 @@ st.title(f"{scelta_modulo}")
 # ==============================================================================
 # DISCOVERY COMPONENT: NOTE DI ARCHITETTURA E SCOPO OPERATIVO DEL MODULO SELEZIONATO
 # ==============================================================================
-descrizioni_moduli = {        
-    
+descrizioni_moduli = {
+        "🏠 Home Page": (
+        "**Control Room Giornaliera:** Sintesi in tempo reale dei principali indici macro, monitoraggio automatico "
+        "degli **Alert di Prezzo e Scadenze Temporali** attivi su GitHub, radar dei flussi istituzionali sui settori USA "
+        "e accesso rapido a tutti gli studi quantitativi della piattaforma."
+    ),
     "📁 Analisi Triple-POC": (
         "**Scopo Operativo & Architettura:** Motore istituzionale di analisi volumetrica multi-orizzonte che confronta "
         "simultaneamente tre profili di volume (**Storico Completo**, **Dall'ATH** e **Finestra Recente 3M/6M/9M**) per isolare "
@@ -1068,6 +1168,213 @@ if scelta_modulo in descrizioni_moduli:
         </p>
     </div>
     """, unsafe_allow_html=True)
+
+# ==============================================================================
+# TAB 00: HOME PAGE — SALA OPERATIVA & MONITOR ALERT (PARTE 1/2)
+# ==============================================================================
+if scelta_modulo == "🏠 Home — Sala Operativa":
+
+    h_top1, h_top2 = st.columns([3.2, 1.0])
+    with h_top1:
+        st.subheader("🧭 Panoramica Mercati, Alert Prioritari & Rotazione Capitali")
+    with h_top2:
+        if st.button("🔄 Aggiorna Dati Live", use_container_width=True, key="btn_refresh_home"):
+            carica_dati_home_live.clear()
+            st.rerun()
+
+    # Carica gli alert salvati in alerts_geometrici_v2.json
+    db_alert_home = {}
+    if os.path.exists("alerts_geometrici_v2.json"):
+        try:
+            with open("alerts_geometrici_v2.json", "r") as f_ah:
+                db_alert_home = json.load(f_ah)
+            if not isinstance(db_alert_home, dict):
+                db_alert_home = {}
+        except Exception:
+            db_alert_home = {}
+
+    tickers_con_alert = list(dict.fromkeys([
+        str(v.get("Ticker", "")).strip().upper()
+        for v in db_alert_home.values()
+        if isinstance(v, dict) and v.get("Stato") == "ATTIVO" and v.get("Ticker")
+    ]))
+
+    with st.spinner("Sincronizzazione indici macro, alert attivi e flussi settoriali..."):
+        macro_dati, prezzi_al_map, df_settori_h = carica_dati_home_live(tuple(tickers_con_alert))
+
+    # 1. FASCIA MACRO: 4 INDICI CHIAVE
+    st.markdown("##### 🌍 1. Termometro Macro & Volatilità Globale")
+    m_specs = [
+        ("^GSPC", "🇺🇸 S&P 500", False),
+        ("^VIX", "⚡ Indice VIX (Paura)", True),
+        ("FTSEMIB.MI", "🇮🇹 FTSE MIB", False),
+        ("BTC-USD", "🪙 Bitcoin (BTC)", False),
+    ]
+    cols_macro = st.columns(4)
+    for idx_mc, (tk_m, lbl_m, is_vix) in enumerate(m_specs):
+        with cols_macro[idx_mc]:
+            info_m = macro_dati.get(tk_m)
+            if info_m:
+                p_m = info_m["prezzo"]
+                c_1d = info_m["chg_1d"]
+                dd_m = info_m["dd_6m"]
+                val_str = f"{p_m:,.2f}" if p_m < 10000 else f"{p_m:,.0f}"
+                sub_str = f"{c_1d:+.2f}% oggi | DD 6M: {dd_m:.1f}%"
+                st.metric(lbl_m, val_str, sub_str, delta_color="inverse" if is_vix else "normal")
+            else:
+                st.metric(lbl_m, "N/D", "Dati non disponibili", delta_color="off")
+
+    st.markdown("---")
+
+    # 2. FASCIA CENTRALE: CENTRO ALLARMI PRIORITARI & RADAR ROTAZIONE SETTORIALE
+    col_left_home, col_right_home = st.columns([1.25, 1.0])
+
+    with col_left_home:
+        st.markdown("##### 🚨 2. Centro Allarmi & Scadenze Temporali (In Primo Piano)")
+        righe_alert_home = []
+        oggi_dt = pd.Timestamp.now().normalize()
+
+        for k_a, v_a in db_alert_home.items():
+            if not isinstance(v_a, dict) or v_a.get("Stato") != "ATTIVO":
+                continue
+            tk_a = str(v_a.get("Ticker", "")).upper()
+            tipo_a = str(v_a.get("Tipo_Geometria", "")).lower()
+            regola_a = str(v_a.get("Regola", ""))
+            tf_a = str(v_a.get("Timeframe_Label", v_a.get("Timeframe", "")))
+
+            if tipo_a == "vertical":
+                data_scad = pd.to_datetime(str(v_a.get("x0", ""))[:10], errors="coerce")
+                gg_manc = int((data_scad - oggi_dt).days) if pd.notna(data_scad) else 999
+                priorita_score = abs(gg_manc)
+                urgenza = "🔥 OGGI / SCADUTO" if gg_manc <= 0 else (f"⏳ TRA {gg_manc} GG" if gg_manc <= 7 else f"📅 Tra {gg_manc} gg")
+                righe_alert_home.append({
+                    "Urgenza": urgenza,
+                    "Ticker": tk_a,
+                    "Tipo": "TEMPO",
+                    "Dettaglio / Regola": regola_a,
+                    "Distanza": f"{gg_manc} gg",
+                    "Timeframe": tf_a,
+                    "_ord": priorita_score
+                })
+            else:
+                target_p = float(v_a.get("y0", 0.0))
+                curr_p = prezzi_al_map.get(tk_a, 0.0)
+                if curr_p > 0 and target_p > 0:
+                    dist_pct = ((target_p - curr_p) / curr_p) * 100.0
+                    abs_d = abs(dist_pct)
+                    urgenza = "🚨 VICINISSIMO (<1.5%)" if abs_d <= 1.5 else ("🟠 IN AVVICINAMENTO (<4%)" if abs_d <= 4.0 else "🟢 MONITORATO")
+                    dist_str = f"{dist_pct:+.2f}% (Att: {curr_p:.2f})"
+                else:
+                    abs_d = 50.0
+                    urgenza = "🟢 ATTIVO"
+                    dist_str = f"Target: {target_p:.2f}"
+
+                righe_alert_home.append({
+                    "Urgenza": urgenza,
+                    "Ticker": tk_a,
+                    "Tipo": tipo_a.upper(),
+                    "Dettaglio / Regola": regola_a,
+                    "Distanza": dist_str,
+                    "Timeframe": tf_a,
+                    "_ord": abs_d
+                })
+
+        if righe_alert_home:
+            df_al_h = pd.DataFrame(righe_alert_home).sort_values(by="_ord", ascending=True).drop(columns=["_ord"]).reset_index(drop=True)
+            st.caption("💡 Clicca su una riga dell'alert per aprire immediatamente il grafico del titolo su **TradingView Pro**.")
+            ev_al_home = st.dataframe(
+                df_al_h,
+                use_container_width=True,
+                hide_index=True,
+                height=310,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="home_alerts_table"
+            )
+            sel_al = ev_al_home.get("selection", {}).get("rows", []) if isinstance(ev_al_home, dict) else getattr(ev_al_home.selection, "rows", [])
+            if len(sel_al) > 0 and sel_al < len(df_al_h):
+                tk_jump_al = str(df_al_h.iloc[sel_al]["Ticker"])
+                def _apri_al_tv(s_tk=tk_jump_al):
+                    st.session_state["tv_test_tk"] = s_tk
+                    st.session_state["menu_navigazione_moduli"] = "🧪 TradingView Pro"
+                    st.session_state["jump_to_modulo"] = "🧪 TradingView Pro"
+                st.button(f"🧪 Apri Subito {tk_jump_al} su TradingView Pro", type="primary", use_container_width=True, on_click=_apri_al_tv)
+        else:
+            st.info("📭 Nessun alert attivo trovato in `alerts_geometrici_v2.json`. Disegna una linea o una scadenza temporale in **TradingView Pro** per vederla qui in primo piano.")
+    # ==========================================================================
+    # TAB 00: HOME PAGE — RADAR SETTORI & HUB MODULI SCALABILE (PARTE 2/2)
+    # ==========================================================================
+    with col_right_home:
+        st.markdown("##### 💰 3. Radar Rotazione Settoriale (Dove Entrano i Soldi)")
+        if not df_settori_h.empty:
+            fig_sec_h = grp.Figure()
+            df_plot_s = df_settori_h.iloc[::-1]
+            bar_cols = ["#22c55e" if sc >= 60 else ("#38bdf8" if sc >= 40 else "#ef4444") for sc in df_plot_s["Score"]]
+            fig_sec_h.add_trace(grp.Bar(
+                x=df_plot_s["Score"],
+                y=df_plot_s["Ticker"] + " — " + df_plot_s["Settore"].str.slice(0, 18),
+                orientation="h",
+                marker_color=bar_cols,
+                text=[f"{int(s)}/100 ({r:+.1f}%)" for s, r in zip(df_plot_s["Score"], df_plot_s["RS 1M %"])],
+                textposition="auto"
+            ))
+            fig_sec_h.update_layout(
+                template="plotly_dark",
+                height=340,
+                margin=dict(l=10, r=15, t=10, b=10),
+                xaxis=dict(title="Smart Money Score (0–100)", range=[0, 105]),
+                yaxis=dict(title="")
+            )
+            st.plotly_chart(fig_sec_h, use_container_width=True, key="home_sector_rotation_chart")
+        else:
+            st.warning("Dati settoriali non disponibili al momento.")
+
+    st.markdown("---")
+
+    # 4. HUB MODULI & FUTURI STUDI (ARCHITETTURA SCALABILE A SCHEDE)
+    st.markdown("##### 🧩 4. Accesso Rapido agli Studi Quantitativi (Hub Moduli)")
+    moduli_cards = [
+        {
+            "titolo": "🧪 TradingView Pro",
+            "desc": "Grafici multi-timeframe, livelli istituzionali (PWH/PMH), disegni interattivi e salvataggio alert su GitHub.",
+            "stato": "ATTIVO",
+            "key_btn": "go_tv_home"
+        },
+        {
+            "titolo": "📁 Analisi Triple-POC",
+            "desc": "Scanner Volumetrico su 3 orizzonti (Storico, ATH, Recente), Falling Wedge, Marubozu e livello Entry/SL/TP.",
+            "stato": "ATTIVO",
+            "key_btn": "go_poc_home"
+        },
+        {
+            "titolo": "📉 Studio Drawdown & Futures",
+            "desc": "Statistica profondità/durata dei cali, tempi stimati di recupero, Forza Relativa (RS) e flussi Smart Money.",
+            "stato": "ATTIVO",
+            "key_btn": "go_dd_home"
+        },
+        {
+            "titolo": "📈 Analisi GARCH Volatilità",
+            "desc": "Modellazione econometrica GJR-GARCH / EGARCH per individuare Squeeze e picchi di panico prima del trend.",
+            "stato": "ATTIVO",
+            "key_btn": "go_garch_home"
+        },
+    ]
+
+    c_mod = st.columns(4)
+    for idx_md, md in enumerate(moduli_cards):
+        with c_mod[idx_md]:
+            st.markdown(f"""
+            <div style='background: rgba(15, 23, 42, 0.72); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 12px; padding: 14px; min-height: 155px; margin-bottom: 10px;'>
+                <div style='font-size: 15px; font-weight: 700; color: #38bdf8; margin-bottom: 6px;'>{md['titolo']}</div>
+                <div style='font-size: 12.5px; color: #cbd5e1; line-height: 1.45;'>{md['desc']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            def _jump_mod(dest_mod=md["titolo"]):
+                st.session_state["menu_navigazione_moduli"] = dest_mod
+                st.session_state["jump_to_modulo"] = dest_mod
+
+            st.button(f"Apri {md['titolo'].split(' ', 1)}", use_container_width=True, key=md["key_btn"], on_click=_jump_mod)
 
 # ==========================================
 # --- TAB 1: TRE POC SCANNER (PARTE 1/6) ---
