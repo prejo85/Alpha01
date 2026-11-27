@@ -1172,7 +1172,7 @@ if scelta_modulo in descrizioni_moduli:
 # ==============================================================================
 # TAB 00: HOME PAGE — SALA OPERATIVA & MONITOR ALERT (PARTE 1/2)
 # ==============================================================================
-if scelta_modulo == "🏠 Home — Sala Operativa":
+if scelta_modulo == "🏠 Home Page":
 
     h_top1, h_top2 = st.columns([3.2, 1.0])
     with h_top1:
