@@ -985,7 +985,12 @@ def rileva_wedge_e_marubozu(df_in, finestra=35, soglia_corpo_pct=75.0):
     
 @st.cache_data(ttl=900, show_spinner=False)
 def carica_dati_home_live(lista_tickers_alert):
-    macro_list = ["^GSPC", "^VIX", "FTSEMIB.MI", "BTC-USD", "EURUSD=X", "JPY=X", "GBPUSD=X", "CHF=X", "EURCHF=X"]
+    macro_list = [
+        "^GSPC", "^VIX", "FTSEMIB.MI", "BTC-USD",
+        "EURUSD=X", "GBPUSD=X", "AUDUSD=X", "NZDUSD=X",
+        "JPY=X", "CHF=X", "CAD=X", "EURCHF=X",
+        "DX-Y.NYB", "FXE"
+    ]
     settori_list = ["XLK", "XLF", "XLC", "XLV", "XLY", "XLP", "XLE", "XLI", "XLB", "XLU", "XLRE"]
     tutti_simboli = list(dict.fromkeys(macro_list + settori_list + list(lista_tickers_alert)))
 
@@ -1078,64 +1083,73 @@ def carica_dati_home_live(lista_tickers_alert):
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def carica_calendario_macro_3stelle():
-    url_ff = "https://faireconomy.media"
-    try:
-        res = requests.get(url_ff, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        if res.status_code != 200:
-            return pd.DataFrame()
-        eventi = res.json()
-        if not isinstance(eventi, list):
-            return pd.DataFrame()
+    # Scarica settimana corrente + settimana successiva per avere sempre tutti i prossimi giorni lavorativi
+    urls_ff = [
+        "https://faireconomy.media",
+        "https://faireconomy.media"
+    ]
+    bandiere = {
+        "USD": "🇺🇸 USA (USD)", "EUR": "🇪🇺 Eurozona (EUR)", "GBP": "🇬🇧 UK (GBP)",
+        "JPY": "🇯🇵 Giappone (JPY)", "CHF": "🇨🇭 Svizzera (CHF)", "CAD": "🇨🇦 Canada (CAD)",
+        "AUD": "🇦🇺 Australia (AUD)", "NZD": "🇳🇿 Nuova Zelanda (NZD)", "CNY": "🇨🇳 Cina (CNY)",
+        "ALL": "🌍 Globale"
+    }
+    giorni_it = {0: "Lunedì", 1: "Martedì", 2: "Mercoledì", 3: "Giovedì", 4: "Venerdì", 5: "Sabato", 6: "Domenica"}
 
-        bandiere = {
-            "USD": "🇺🇸 USD", "EUR": "🇪🇺 EUR", "GBP": "🇬🇧 GBP",
-            "JPY": "🇯🇵 JPY", "CHF": "🇨🇭 CHF"
-        }
+    righe_3s = []
+    oggi_it = pd.Timestamp.now(tz="Europe/Rome").normalize()
 
-        righe_3s = []
-        oggi_it = pd.Timestamp.now(tz="Europe/Rome").normalize()
-
-        for ev in eventi:
-            if str(ev.get("impact", "")).strip().lower() != "high":
+    for u_ff in urls_ff:
+        try:
+            res = requests.get(u_ff, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            if res.status_code != 200:
+                continue
+            eventi = res.json()
+            if not isinstance(eventi, list):
                 continue
 
-            valuta = str(ev.get("country", "")).strip().upper()
-            if valuta not in {"USD", "EUR", "GBP", "JPY", "CHF"}:
-                continue
+            for ev in eventi:
+                # Filtra TUTTE le notizie a 3 Stelle (High Impact) di qualsiasi area/asset class
+                if str(ev.get("impact", "")).strip().lower() != "high":
+                    continue
 
-            dt_raw = pd.to_datetime(ev.get("date"), utc=True, errors="coerce")
-            if pd.isna(dt_raw):
-                continue
-            dt_it = dt_raw.tz_convert("Europe/Rome")
+                dt_raw = pd.to_datetime(ev.get("date"), utc=True, errors="coerce")
+                if pd.isna(dt_raw):
+                    continue
+                dt_it = dt_raw.tz_convert("Europe/Rome")
 
-            if dt_it.normalize() < oggi_it:
-                continue
+                if dt_it.normalize() < oggi_it:
+                    continue
 
-            valuta_lbl = bandiere.get(valuta, f"🌐 {valuta}")
-            titolo_ev = str(ev.get("title", "")).strip()
-            previsto = str(ev.get("forecast", "")).strip() or "—"
-            precedente = str(ev.get("previous", "")).strip() or "—"
+                paese = str(ev.get("country", "")).strip().upper()
+                area_lbl = bandiere.get(paese, f"🌐 {paese}")
+                titolo_ev = str(ev.get("title", "")).strip()
+                previsto = str(ev.get("forecast", "")).strip() or "—"
+                precedente = str(ev.get("previous", "")).strip() or "—"
 
-            is_oggi = dt_it.normalize() == oggi_it
-            giorno_lbl = f"🔥 OGGI {dt_it.strftime('%H:%M')}" if is_oggi else dt_it.strftime("%d/%m (%a) %H:%M")
+                is_oggi = dt_it.normalize() == oggi_it
+                nome_g = giorni_it.get(dt_it.weekday(), "")
+                tab_giorno = f"🔥 OGGI ({dt_it.strftime('%d/%m')})" if is_oggi else f"📅 {nome_g} {dt_it.strftime('%d/%m')}"
 
-            righe_3s.append({
-                "Data & Ora (IT)": giorno_lbl,
-                "Impatto": "⭐⭐⭐ ALTO",
-                "Valuta": valuta_lbl,
-                "Evento Macroeconomico": titolo_ev,
-                "Previsto": previsto,
-                "Precedente": precedente,
-                "_ts": dt_it.timestamp()
-            })
+                righe_3s.append({
+                    "Tab_Giorno": tab_giorno,
+                    "Data_Ord": dt_it.strftime("%Y-%m-%d"),
+                    "Ora (IT)": dt_it.strftime("%H:%M"),
+                    "Impatto": "⭐⭐⭐ ALTO",
+                    "Area / Valuta": area_lbl,
+                    "Evento Macroeconomico (3 Stelle)": titolo_ev,
+                    "Previsto": previsto,
+                    "Precedente": precedente,
+                    "_ts": dt_it.timestamp()
+                })
+        except Exception:
+            continue
 
-        if not righe_3s:
-            return pd.DataFrame()
-
-        return pd.DataFrame(righe_3s).sort_values(by="_ts", ascending=True).drop(columns=["_ts"]).reset_index(drop=True)
-    except Exception:
+    if not righe_3s:
         return pd.DataFrame()
 
+    df_cal = pd.DataFrame(righe_3s).drop_duplicates(subset=["Data_Ord", "Ora (IT)", "Evento Macroeconomico (3 Stelle)"])
+    return df_cal.sort_values(by="_ts", ascending=True).drop(columns=["_ts"]).reset_index(drop=True)
 
 # ==============================================================================
 # STRUTTURA DI NAVIGAZIONE LATERALE (SIDEBAR) CON TAB VERTICALI A SCOMPARSA
@@ -1282,25 +1296,42 @@ if scelta_modulo == "🏠 Home Page":
             else:
                 st.metric(lbl_m, "N/D", "Dati non disponibili", delta_color="off")
 
-    # 1B. STRISCIA VALUTE: I 5 CROSS PRINCIPALI
-    st.markdown("##### 💱 Cross Valutari Principali (Major & Europa)")
-    fx_specs = [
+    # 1B. MATRICE VALUTE SPECULARI (2 RIGHE x 5 COLONNE: 4 MAJOR + 4 INVERSE + DXY / EURO)
+    st.markdown("##### 💱 Matrice Valute & Correlazioni Speculari (Sopra: USD Denominatore / DXY — Sotto: USD Numeratore / Euro)")
+
+    # Riga 1 (Sopra): 4 Coppie con USD al denominatore + Dollar Index (DXY) in Colonna 5
+    fx_riga_sopra = [
         ("EURUSD=X", "🇪🇺/🇺🇸 EUR / USD", 4),
-        ("JPY=X", "🇺🇸/🇯🇵 USD / JPY", 2),
         ("GBPUSD=X", "🇬🇧/🇺🇸 GBP / USD", 4),
-        ("CHF=X", "🇺🇸/🇨🇭 USD / CHF", 4),
-        ("EURCHF=X", "🇪🇺/🇨🇭 EUR / CHF", 4),
+        ("AUDUSD=X", "🇦🇺/🇺🇸 AUD / USD", 4),
+        ("NZDUSD=X", "🇳🇿/🇺🇸 NZD / USD", 4),
+        ("DX-Y.NYB", "💵 Dollar Index (DXY)", 2),
     ]
-    cols_fx = st.columns(5)
-    for idx_fx, (tk_fx, lbl_fx, dec_fx) in enumerate(fx_specs):
-        with cols_fx[idx_fx]:
-            info_fx = macro_dati.get(tk_fx)
-            if info_fx:
-                p_fx = info_fx["prezzo"]
-                c_fx = info_fx["chg_1d"]
-                st.metric(lbl_fx, f"{p_fx:.{dec_fx}f}", f"{c_fx:+.2f}% oggi", delta_color="normal")
+    cols_fx_top = st.columns(5)
+    for idx_ft, (tk_ft, lbl_ft, dec_ft) in enumerate(fx_riga_sopra):
+        with cols_fx_top[idx_ft]:
+            info_ft = macro_dati.get(tk_ft)
+            if info_ft:
+                st.metric(lbl_ft, f"{info_ft['prezzo']:.{dec_ft}f}", f"{info_ft['chg_1d']:+.2f}% oggi", delta_color="normal")
             else:
-                st.metric(lbl_fx, "N/D", "Dati non disp.", delta_color="off")
+                st.metric(lbl_ft, "N/D", "Dati non disp.", delta_color="off")
+
+    # Riga 2 (Sotto): 4 Coppie inverse correlate (USD al numeratore / Cross) + Indice Euro (FXE) in Colonna 5
+    fx_riga_sotto = [
+        ("CHF=X", "🇺🇸/🇨🇭 USD / CHF (Inv. EUR)", 4),
+        ("JPY=X", "🇺🇸/🇯🇵 USD / JPY", 2),
+        ("CAD=X", "🇺🇸/🇨🇦 USD / CAD (Inv. AUD)", 4),
+        ("EURCHF=X", "🇪🇺/🇨🇭 EUR / CHF", 4),
+        ("FXE", "🇪🇺 Euro Index (ETF FXE)", 2),
+    ]
+    cols_fx_bot = st.columns(5)
+    for idx_fb, (tk_fb, lbl_fb, dec_fb) in enumerate(fx_riga_sotto):
+        with cols_fx_bot[idx_fb]:
+            info_fb = macro_dati.get(tk_fb)
+            if info_fb:
+                st.metric(lbl_fb, f"{info_fb['prezzo']:.{dec_fb}f}", f"{info_fb['chg_1d']:+.2f}% oggi", delta_color="normal")
+            else:
+                st.metric(lbl_fb, "N/D", "Dati non disp.", delta_color="off")
 
     st.markdown("---")
 
@@ -1409,25 +1440,33 @@ if scelta_modulo == "🏠 Home Page":
 
     st.markdown("---")
 
-    # 4. CALENDARIO MACROECONOMICO — SOLO NEWS 3 STELLE (VALUTE MAJOR)
-    st.markdown("##### 📰 4. Calendario Macroeconomico Settimanale — Solo News ⭐⭐⭐ (USD, EUR, GBP, JPY, CHF)")
+    # 4. CALENDARIO MACROECONOMICO DINAMICO — LINGUETTE GIORNI LAVORATIVI (TUTTE LE NEWS 3 STELLE)
+    st.markdown("##### 📰 4. Calendario Macroeconomico Dinamico — Solo News ⭐⭐⭐ (Tutti i Mercati)")
     df_macro_3s = carica_calendario_macro_3stelle()
 
     if not df_macro_3s.empty:
-        ev_oggi_count = int(df_macro_3s["Data & Ora (IT)"].str.contains("OGGI").sum())
-        if ev_oggi_count > 0:
-            st.warning(f"⚠️ **Attenzione Volatilità:** Oggi sono in programma **{ev_oggi_count} dati macro a 3 Stelle** (orario italiano). Possibili spike su Indici, Futures e Cross.")
-        else:
-            st.caption("📅 Prossimi dati macroeconomici ad alto impatto della settimana sui principali cross (orario italiano Europe/Rome).")
+        # Estrae l'elenco ordinato dei giorni lavorativi disponibili (es. OGGI, Lunedì, Martedì...)
+        giorni_disponibili = list(dict.fromkeys(df_macro_3s["Tab_Giorno"].tolist()))
+        st.caption("💡 Clicca sulle linguette dei giorni lavorativi per scorrere tutte le notizie macro ad alto impatto (3 Stelle) in orario italiano.")
 
-        st.dataframe(
-            df_macro_3s,
-            use_container_width=True,
-            hide_index=True,
-            height=min(320, 42 + len(df_macro_3s) * 35)
-        )
+        tabs_giorni = st.tabs(giorni_disponibili)
+        for tab_g, nome_tab_g in zip(tabs_giorni, giorni_disponibili):
+            with tab_g:
+                df_g_sel = df_macro_3s[df_macro_3s["Tab_Giorno"] == nome_tab_g][
+                    ["Ora (IT)", "Impatto", "Area / Valuta", "Evento Macroeconomico (3 Stelle)", "Previsto", "Precedente"]
+                ].reset_index(drop=True)
+
+                if "OGGI" in nome_tab_g:
+                    st.warning(f"⚠️ **Attenzione Volatilità Oggi:** {len(df_g_sel)} eventi macro a 3 Stelle in programma.")
+
+                st.dataframe(
+                    df_g_sel,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(300, 42 + len(df_g_sel) * 36)
+                )
     else:
-        st.info("✅ Nessun evento macroeconomico a 3 Stelle rimanente per il resto della settimana sulle valute major.")
+        st.info("✅ Nessun evento macroeconomico a 3 Stelle trovato per i prossimi giorni lavorativi.")
 
     st.markdown("---")
 
