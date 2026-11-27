@@ -1132,12 +1132,13 @@ def carica_calendario_macro_3stelle():
 
     for g_dt in giorni_target:
         date_str = g_dt.strftime("%Y-%m-%d")
-        url_nq_eco = f"https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&offset=0&download=true{date_str}"
+        url_nq_eco = f"https://nasdaq.com{date_str}"
         try:
             res = requests.get(url_nq_eco, headers=headers_nq_cal, timeout=10)
             if res.status_code != 200:
                 continue
-            rows_eco = res.json().get("data", {}).get("rows", [])
+            data_obj = res.json().get("data") or {}
+            rows_eco = (data_obj.get("calendar") or {}).get("rows") or data_obj.get("rows") or []
             if not rows_eco:
                 continue
 
