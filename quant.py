@@ -1593,13 +1593,31 @@ if scelta_modulo == "📉 Studio Drawdown & Futures":
 
     st.subheader("📉 Studio Statistico dei Drawdown, Recovery & Calibrazione Futures")
 
-    with st.expander("📖 Guida Operativa: Come Usare la Statistica dei Drawdown per Trading e Futures", expanded=False):
+    with st.expander("📖 Guida Operativa: Drawdown, Forza Relativa (RS) & Radar Flussi Istituzionali", expanded=False):
         st.markdown("""
-        ### 🧠 Perché studiare i Drawdown prima di entrare a mercato?
-        Un calo del **-15%** su un'azione difensiva o sull'S&P 500 è un evento raro e profittevole da comprare; lo stesso **-15%** su una crypto o su un titolo tech volatile è semplice rumore quotidiano.
-        * **📊 Severità Storica (Percentile):** Ti dice se il drawdown di oggi è peggiore del 75%–90% delle giornate storiche di quel preciso asset (*zona di eccesso statistico*).
+        ### 💰 Perché abbiamo integrato il Radar Flussi Istituzionali (Smart Money)?
+        Un titolo in drawdown non rimbalza solo perché è "sceso molto": risale quando i grandi capitali ricominciano ad accumularlo. Per distinguere i veri ingressi istituzionali dai rimbalzi fasulli, il motore calcola uno **Smart Money Score (0–100)** incrociando **3 fattori volumetrici e di forza**:
+        1. **Forza Relativa (RS) sopra la EMA 20:** L'asset sta già battendo il suo benchmark di riferimento.
+        2. **Chaikin Money Flow (`CMF 20g > 0`):** Misura la pressione reale in acquisto: valori positivi indicano che le candele chiudono sistematicamente vicino ai massimi accompagnate da volumi in crescita (*accumulo istituzionale*).
+        3. **Volumi Relativi (`RVOL 5g > 1.0x`):** Verifica che negli ultimi 5 giorni ci sia un afflusso di scambi superiore alla media mensile.
+
+        ---
+
+        ### 🎯 Cosa deduci incrociando Drawdown e Forza Relativa (RS vs Benchmark)
+        Confrontando il **Drawdown** con la **Forza Relativa contro l'Indice di riferimento**, distingui i veri leader dalle *value traps*:
+
+        | Incrocio Drawdown + Forza Relativa | Cosa sta succedendo | Deduzione Operativa |
+        | :--- | :--- | :--- |
+        | **🏆 1. Leader Resiliente** *(DD Basso + RS Forte)* | Mentre l'indice scende, questo titolo o settore perde molto meno e la sua linea RS rompe al rialzo sopra la EMA 20. | **Primo titolo da comprare** appena il mercato rimbalza: massima domanda istituzionale nascosta. |
+        | **🟢 2. Accumulo / Inversione** *(DD Profondo >65° pct + RS in Ripresa)* | Il titolo ha già scontato un forte calo, ma nelle ultime sedute smette di sottoperformare l'indice (RS sopra EMA 20). | **Punto di ingresso ottimale** per strategie *mean-reversion*: i venditori hanno esaurito la spinta. |
+        | **🟠 3. Debolezza Nascosta** *(DD Contenuto + RS in Calo)* | Il prezzo sembra reggere, ma sta crescendo molto meno del suo indice di riferimento. | **Evitare o alleggerire**: alla prossima ondata di vendite sarà tra i primi a cedere. |
+        | **🔴 4. Coltello che Cade** *(DD Profondo + RS Debole)* | Il titolo continua a perdere più dell'indice giorno dopo giorno senza segnali di stabilizzazione. | **Non mediare al ribasso**: anche se sembra "a sconto" rispetto all'ATH, manca ancora accumulo. |
+
+        ---
+
+        ### 📊 Altri Indicatori nella Tabella
         * **📅 Stagionalità Mensile:** Individua in quali mesi dell'anno il paniere soffre i ritracciamenti peggiori e quanti giorni di borsa impiega mediamente a recuperarli.
-        * **⏱️ Giorni Stimati al Recupero:** Confronta i giorni già trascorsi sotto il picco con la durata media storica dei cali simili di quel singolo titolo.
+        * **⏱️ Giorni Stimati al Recupero:** Confronta i giorni già trascorsi sotto il picco con la durata media storica dei cali simili di quel singolo strumento.
         * **⚖️ Leva Max Sicura (Futures / CFD):** Calcola la leva massima sostenibile affinché un ritracciamento al **90° percentile storico** non eroda più del 50% del margine allocato.
         """)
 
